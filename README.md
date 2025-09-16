@@ -1,2 +1,2 @@
-# FinSight
-Intelligent Stock Prediction and Advisory Platform
+# FinSight Frontend
+Intelligent Stock Prediction and Advisory Platform frontend
