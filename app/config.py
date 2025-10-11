@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     NEWS_FETCH_CRON: str = "0 * * * *"  # 每小时
     DEFAULT_VECTOR_DIM: int = 32
 
+    # LLM Setting
+    LLM_PROVIDER: str = Field("deepseek_openai", alias="LLM_PROVIDER")
+    LLM_OPENAI_BASE: str = Field("http://127.0.0.1:8000/v1", alias="LLM_OPENAI_BASE")
+    LLM_OPENAI_API_KEY: str = Field("sk-local-placeholder", alias="LLM_OPENAI_API_KEY")
+    LLM_MODEL: str = Field("deepseek-8b", alias="LLM_MODEL")
+
     class Config:
         env_file = ".env"
 
