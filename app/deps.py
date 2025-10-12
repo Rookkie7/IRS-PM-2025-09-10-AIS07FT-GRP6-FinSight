@@ -1,4 +1,8 @@
+from app.adapters.db.user_repo_mongo import UserRepoMongo
 from app.adapters.llm.openai_llm import OpenAICompatLLM
+from app.ports.storage import UserRepoPort
+from app.services.auth_service import AuthService
+from app.services.user_service import UserService
 from config import settings
 from adapters.db.news_repo_mongo import NewsRepoMongo
 from adapters.vector.mongo_vector_index import MongoVectorIndex
@@ -7,6 +11,15 @@ from services.news_service import NewsService
 from services.rec_service import RecService
 from services.rag_service import RagService
 from services.forecast_service import ForecastService
+
+def get_user_repo() -> UserRepoMongo:
+    return UserRepoMongo()
+
+def get_auth_service():
+    return AuthService(repo=get_user_repo())
+
+def get_user_service():
+    return UserService(repo=get_user_repo(), embedder=get_embedder(), dim=32)
 
 def get_llm():
     if settings.LLM_PROVIDER == "deepseek_openai":

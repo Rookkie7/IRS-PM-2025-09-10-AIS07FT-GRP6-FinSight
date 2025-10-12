@@ -1,11 +1,31 @@
 # app/main.py
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI
+
+from app.adapters.db.user_repo_mongo import UserRepoMongo
 from app.config import settings
 from app.api.v1.news_router import router as news_router
 from app.api.v1.rec_router import router as rec_router
 from app.api.v1.rag_router import router as rag_router
 from app.api.v1.forecast_router import router as forecast_router
+from app.api.v1.auth_router import router as auth_router
+from app.api.v1.user_router import router as user_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context"""
+    repo = UserRepoMongo()
+    await repo.ensure_indexes()
+    print("✅ MongoDB indexes ensured at startup.")
+
+    # 如果有更多启动逻辑（如加载模型、连接Redis等），都放这里
+    # yield 之后的部分会在关闭时执行
+    yield
+
+    print("🛑 App shutting down... (cleanup if needed)")
+
 
 def create_app() -> FastAPI:
     """
@@ -18,6 +38,8 @@ def create_app() -> FastAPI:
     )
 
     # 注册路由
+    app.include_router(auth_router)
+    app.include_router(user_router)
     app.include_router(news_router)
     app.include_router(rec_router)
     app.include_router(rag_router)
