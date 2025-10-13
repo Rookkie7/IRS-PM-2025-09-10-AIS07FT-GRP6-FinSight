@@ -46,6 +46,9 @@ dependencies = [
     "psycopg[binary,pool]>=3.1",
     "sqlalchemy>=2.0",
     "pgvector>=0.2.5",
+
+    "sshtunnel>=0.4.0",
+    "paramiko<3.4",
 ]
 
 [project.optional-dependencies]
