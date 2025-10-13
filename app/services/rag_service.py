@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from typing import List, Dict
+from app.adapters.llm.openai_llm import OpenAICompatLLM
 from app.adapters.rag.retriever import Retriever
 from app.adapters.rag.ranker import SimpleRanker
 from app.adapters.rag.prompt_templates import build_finance_prompt
-from app.ports.llm import LLMProviderPort
 from app.ports.vector_index import VectorIndexPort
 from app.adapters.db.news_repo_mongo import NewsRepoMongo
 from app.ports.embedding import EmbeddingProviderPort
@@ -15,7 +15,7 @@ class RagService:
         index: VectorIndexPort,
         news_repo: NewsRepoMongo,
         query_embedder: EmbeddingProviderPort,
-        llm: LLMProviderPort,
+        llm: OpenAICompatLLM,
         dim: int = 32,
     ):
         self.index = index
@@ -47,7 +47,7 @@ class RagService:
 
         # 3) Pull the original text (one-time batch get)
         ids = [hid for hid, _ in hits]
-        docs = await self.news_repo.get_many(ids)  # 需要在 repo 中实现 get_many(ids) 方法
+        docs = await self.news_repo.get_many(ids)
         id2doc: Dict[str, dict] = {str(d["_id"]): d for d in docs}
 
         # 4) rerank
