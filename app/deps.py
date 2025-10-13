@@ -6,6 +6,15 @@ from services.news_service import NewsService
 from services.rec_service import RecService
 from services.rag_service import RagService
 from services.forecast_service import ForecastService
+from config import settings
+from adapters.db.database_client import get_mongo_db, get_postgres_db
+
+# 数据库依赖
+def get_mongo():
+    return get_mongo_db()
+
+def get_postgres():
+    return next(get_postgres_db())
 
 def get_vector_index():
     # 可根据 settings.VECTOR_BACKEND 切换到 pgvector_index.PgVectorIndex()

@@ -6,14 +6,10 @@ import logging
 from dotenv import load_dotenv
 
 from app.config import settings
-from app.api.v1.news_router import router as news_router
-from app.api.v1.rec_router import router as rec_router
-from app.api.v1.rag_router import router as rag_router
-from app.api.v1.forecast_router import router as forecast_router
 from app.api.v1.stocks_router import router as stocks_router
 from app.api.v1.users_router import router as users_router
 
-from app.adapters.database_client import create_tables, check_database_connection
+from app.adapters.db.database_client import create_tables, check_database_connection
 
 
 def create_app() -> FastAPI:
@@ -36,10 +32,6 @@ def create_app() -> FastAPI:
     )
 
     # 注册路由
-    app.include_router(news_router)
-    app.include_router(rec_router)
-    app.include_router(rag_router)
-    app.include_router(forecast_router)
     app.include_router(stocks_router)
     app.include_router(users_router)
 
