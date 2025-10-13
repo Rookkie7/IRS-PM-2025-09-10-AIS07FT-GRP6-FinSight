@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 
+from app.adapters.db.mongo_client import init_mongo_via_ssh
 from app.adapters.db.user_repo_mongo import UserRepoMongo
 from app.config import settings
 from app.api.v1.news_router import router as news_router
@@ -16,15 +17,15 @@ from app.api.v1.user_router import router as user_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context"""
-    repo = UserRepoMongo()
-    await repo.ensure_indexes()
-    print("✅ MongoDB indexes ensured at startup.")
-
-    # 如果有更多启动逻辑（如加载模型、连接Redis等），都放这里
-    # yield 之后的部分会在关闭时执行
-    yield
-
-    print("🛑 App shutting down... (cleanup if needed)")
+    async with init_mongo_via_ssh():
+        # 启动阶段
+        repo = UserRepoMongo()
+        await repo.ensure_indexes()
+        print("✅ MongoDB indexes ensured at startup.")
+        # 交回控制权，开始处理请求
+        yield
+        # 关闭阶段（需要额外清理就放这里）
+        print("🛑 App shutting down... (cleanup if needed)")
 
 
 def create_app() -> FastAPI:
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
         title=settings.APP_NAME,
         version="1.0.0",
         description="Finsight Backend APIs",
+        lifespan=lifespan,
     )
 
     # 注册路由

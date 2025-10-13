@@ -1,10 +1,11 @@
 from typing import Optional, List
 from bson import ObjectId
-from app.adapters.db.mongo_client import db
+from app.adapters.db.mongo_client import get_db
 from app.model.models import News
 
 class NewsRepoMongo:
-    col = db["news"]
+    def __init__(self):
+       self.col = get_db()["news"]
 
     async def get_many(self, ids: List[str]) -> List[dict]:
         obj_ids, str_ids = [], []

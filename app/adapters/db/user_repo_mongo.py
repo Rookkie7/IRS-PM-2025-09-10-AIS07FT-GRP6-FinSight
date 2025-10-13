@@ -3,7 +3,7 @@ from datetime import datetime
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 
-from app.adapters.db.mongo_client import db
+from app.adapters.db.mongo_client import get_db
 from app.model.exception import UserAlreadyExistsError
 from app.model.models import UserInDB, EmbeddingVector, UserCreate
 from app.ports.storage import UserRepoPort
@@ -11,7 +11,7 @@ from app.ports.storage import UserRepoPort
 
 class UserRepoMongo(UserRepoPort):
     def __init__(self):
-        self.col = db["users"]   # 这里只拿句柄，不做 IO
+        self.col = get_db()["users"]   # 这里只拿句柄，不做 IO
 
     async def ensure_indexes(self) -> None:
         # 这里才是异步 IO，必须 await，在有事件循环的上下文里调用一次即可
