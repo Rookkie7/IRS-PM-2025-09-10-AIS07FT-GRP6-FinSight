@@ -1,4 +1,5 @@
 # app/main.py
+from __future__ import annotations
 from contextlib import asynccontextmanager
 from app.jobs.scheduler import create_scheduler
 
@@ -84,27 +85,23 @@ def _build_embedder():
     elif provider in ("st", "sentence-transformers", "sentence_transformers"):
         if not _HAS_ST:
             raise RuntimeError("EMBEDDING_PROVIDER=st 但未安装 sentence-transformers。")
-        base = LocalEmbeddingProvider(settings.ST_MODEL)  # e.g. 384
+        base = LocalEmbeddingProvider(settings.ST_MODEL)  # e.g., 384
     elif provider in ("openai", "oai"):
-        # 如果你已有 OpenAI 适配器，取消上面的 import 并启用这里
-        # return OpenAIEmbedder(model=settings.OAI_EMBED_MODEL, api_key=settings.OPENAI_API_KEY)
-        raise RuntimeError("EMBEDDING_PROVIDER=openai 尚未接入具体适配器，请实现 app/adapters/embeddings/openai_embedder.py 后再启用。")
-    # 兜底
+        raise RuntimeError("EMBEDDING_PROVIDER=openai 尚未接入具体适配器。")
     else:
         base = HashingEmbedder(dim=max(64, settings.PROJECTION_DIM))
 
-    # 投影总开关：只要 PROJECTION_METHOD 不是 none，就包一层
     method = (settings.PROJECTION_METHOD or "srp").lower().strip()
     if method != "none":
-        emb = ProjectingEmbedder(
+        return ProjectingEmbedder(
             base_embedder=base,
             method=method,
             proj_dim=settings.PROJECTION_DIM,
-            seed=settings.PROJECTION_SEED
+            seed=settings.PROJECTION_SEED,
         )
-        return emb
     return base
-  
+
+
 def _build_repos(embedder_dim: int):
     backend = (settings.VECTOR_BACKEND or "").lower().strip()
 
@@ -121,17 +118,18 @@ def _build_repos(embedder_dim: int):
         ev_repo   = MongoEventRepo(settings.MONGO_URI, db_name=settings.MONGO_DB)
         prof_repo = MongoProfileRepo(settings.MONGO_URI, db_name=settings.MONGO_DB, dim=embedder_dim)
         return news_repo, prof_repo, ev_repo
-    else:
-        print("[RepoInit] ProfileRepo = InMemoryProfileRepo, NewsRepo/EventRepo = InMemory")
-        # 兜底：全部内存
-        return InMemoryNewsRepo(), InMemoryProfileRepo(dim=embedder_dim), InMemoryEventRepo()
 
+    print("[RepoInit] ProfileRepo = InMemoryProfileRepo, NewsRepo/EventRepo = InMemory")
+    return InMemoryNewsRepo(), InMemoryProfileRepo(dim=embedder_dim), InMemoryEventRepo()
+
+
+# —— 全局单例：供 routers 通过 app.main.svc 获取 —— #
 embedder = _build_embedder()
 news_repo, prof_repo, ev_repo = _build_repos(
     embedder_dim=getattr(embedder, "dim", settings.DEFAULT_VECTOR_DIM)
 )
-
 svc = NewsService(news_repo, prof_repo, ev_repo, embedder)
+
 sched = None
 
 @asynccontextmanager
@@ -166,7 +164,7 @@ async def lifespan(app: FastAPI):
     # 应用运行中
     yield
 
-    # —— 关闭调度器 —— 
+    # —— 关闭调度器 ——
     if sched is not None:
         try:
             sched.shutdown(wait=False)
@@ -178,22 +176,30 @@ from app.api.v1.user_router import router as user_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context"""
-    async with init_mongo_via_ssh():
+    """
+    仅负责开启/关闭 SSH 隧道（保持全局 svc 不变，避免和推荐系统 DI 冲突）
+    """
+    async with init_mongo_via_ssh(), init_postgres_via_ssh():
         # 启动阶段
         repo = UserRepoMongo()
         await repo.ensure_indexes()
         print("✅ MongoDB indexes ensured at startup.")
         # 交回控制权，开始处理请求
         yield
-        # 关闭阶段（需要额外清理就放这里）
-        print("🛑 App shutting down... (cleanup if needed)")
 
+def _mask_dsn(dsn: Optional[str]) -> Optional[str]:
+    """postgresql://user:***@host:port/db"""
+    if not dsn:
+        return None
+    return re.sub(r"(://[^:]+:)([^@]+)(@)", r"\1***\3", dsn)
+
+def _mask_mongo(uri: Optional[str]) -> Optional[str]:
+    """mongodb://user:***@host:port/..."""
+    if not uri:
+        return None
+    return re.sub(r"(://[^:]+:)([^@]+)(@)", r"\1***\3", uri)
 
 def create_app() -> FastAPI:
-    """
-    构建 FastAPI 应用，加载路由、中间件、事件处理等
-    """
     app = FastAPI(
         title=settings.APP_NAME,
         version="1.0.0",
@@ -217,8 +223,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)
-    
-    # 注册路由
+    # 路由（去掉重复 include）
     app.include_router(auth_router)
     app.include_router(user_router)
     app.include_router(news_router)
@@ -228,10 +233,6 @@ def create_app() -> FastAPI:
     app.include_router(stocks_router)
     @app.get("/")
     async def root():
-        """
-        根路径
-        """
-        db_status = check_database_connection()
         return {
             "message": "股票推荐系统 API",
             "status": "running",
@@ -244,7 +245,6 @@ def create_app() -> FastAPI:
                 "用户管理": "/api/users"
             }
         }
-    app.include_router(user_router)
 
     # 调试与维护路由（仅 dev/DEBUG）
     if settings.ENV.lower() == "dev" or settings.DEBUG:
