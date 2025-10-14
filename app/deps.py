@@ -1,19 +1,22 @@
-from app.adapters.db.user_repo_mongo import UserRepoMongo
+from app.adapters.db.user_repo import UserRepo
 from app.adapters.llm.openai_llm import OpenAICompatLLM
 from app.ports.storage import UserRepoPort
 from app.services.auth_service import AuthService
 from app.services.user_service import UserService
 from config import settings
-from adapters.db.news_repo_mongo import NewsRepoMongo
+from adapters.db.news_repo import NewsRepo
 from adapters.vector.mongo_vector_index import MongoVectorIndex
 from adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
 from services.news_service import NewsService
 from services.rec_service import RecService
 from services.rag_service import RagService
 from services.forecast_service import ForecastService
+from config import settings
+from adapters.db.database_client import get_mongo_db, get_postgres_db
 
-def get_user_repo() -> UserRepoMongo:
-    return UserRepoMongo()
+
+def get_user_repo() -> UserRepo:
+    return UserRepo()
 
 def get_auth_service():
     return AuthService(repo=get_user_repo())
@@ -47,7 +50,7 @@ def get_news_index():
 
 def get_news_service():
     return NewsService(
-        repo=NewsRepoMongo(),
+        repo=NewsRepo(),
         embedder=get_embedder(),
         index=get_vector_index(),
         dim=settings.DEFAULT_VECTOR_DIM
@@ -59,7 +62,7 @@ def get_rec_service():
 def get_rag_service():
     return RagService(
         index=get_news_index(),
-        news_repo=NewsRepoMongo(),
+        news_repo=NewsRepo(),
         query_embedder=get_query_embedder(),
         llm=get_llm(),
         dim=32,

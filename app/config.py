@@ -1,7 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -10,22 +9,34 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(60 * 24, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
 
     APP_NAME: str = "Finsight"
+
     # SSH 隧道相关
     SSH_TUNNEL: bool = Field(False, alias="SSH_TUNNEL")
     SSH_HOST: str | None = None
     SSH_PORT: int = 22
     SSH_USER: str | None = None
     SSH_PEM_PATH: str | None = None
+    LOCAL_BIND_HOST: str | None = None
+
+    # Mongo
     REMOTE_MONGO_HOST: str = "127.0.0.1"
     REMOTE_MONGO_PORT: int = 27017
-    LOCAL_BIND_HOST: str = "127.0.0.1"
-    LOCAL_BIND_PORT: int = 0  # 0=随机
+    LOCAL_MONGO_HOST: str = "127.0.0.1"
+    LOCAL_MONGO_PORT: int = 0  # 0=随机
 
-    # Mongo 连接串：当 SSH_TUNNEL=False 时需要；开启隧道时可不填
     MONGO_URI: str | None = Field(default=None, alias="MONGO_URI")
     MONGO_DB: str = "finsight"
 
-    REDIS_URL: str = Field(..., env="REDIS_URL")
+    # Postgre
+    REMOTE_PG_HOST: str = "127.0.0.1"
+    REMOTE_PG_PORT: int = 27017
+    LOCAL_PG_HOST: str = "127.0.0.1"
+    LOCAL_PG_PORT: int = 0  # 0=随机
+    POSTGRES_URI: str = Field(..., env="POSTGRES_URI")
+    POSTGRES_USER: str = Field(..., env="POSTGRES_USER")
+    POSTGRES_PASSWORD: str = Field(..., env="POSTGRES_PASSWORD")
+    POSTGRES_DB: str = Field(..., env="POSTGRES_DB")
+
     EMBEDDING_PROVIDER: str = Field("openai", env="EMBEDDING_PROVIDER")
     VECTOR_BACKEND: str = Field("pgvector", env="VECTOR_BACKEND")  # mongo | pgvector
     NEWS_FETCH_CRON: str = "0 * * * *"  # 每小时
