@@ -1,7 +1,9 @@
-{
-  "AAPL": ["Apple", "Apple Inc.", "iPhone"],
-  "NVDA": ["NVIDIA", "GeForce", "CUDA"],
-  "MSFT": ["Microsoft", "Azure"],
-  "TCS.NS": ["TCS", "Tata Consultancy"],
-  "INFY.NS": ["Infosys", "INFY"]
-}
+[
+  "NVDA","MSFT","AAPL","GOOGL","GOOG","AMZN","META","AVGO","TSLA","ORCL","JPM","WMT","LLY",
+  "V","NFLX","MA","XOM","JNJ","PLTR","COST","ABBV","HD","BAC","PG","AMD","UNH","GE","CVX",
+  "KO","CSCO","IBM","TMUS","PM","WFC","MS","GS","ABT","CAT","CRM","AXP","MRK","LIN","MCD",
+  "RTX","PEP","MU","TMO","DIS","UBER","ANET","APP","BX","T","NOW","INTU","BLK","INTC","C",
+  "NEE","VZ","BKNG","AMAT","SCHW","QCOM","LRCX","GEV","BA","TJX","AMGN","TXN","ISRG","ACN",
+  "APH","SPGI","GILD","DHR","ETN","BSX","ADBE","PANW","PFE","PGR","SYK","UNP","LOW","COF",
+  "KLAC","HON","CRWD","HOOD","MDT","DE","LMT","IBKR","ADP","CEG","DASH","CB","MO","WELL"
+]

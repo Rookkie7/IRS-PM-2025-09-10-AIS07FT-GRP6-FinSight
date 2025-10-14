@@ -228,11 +228,71 @@ class NewsService:
         return scored
 
     # --- 推荐：可选少量实时拉取后再统一排序 ---
-    def recommend_for_user(self, user_id: str, limit: int = 20, refresh: bool = False, mix_ratio: float = 0.2, symbols: list[str] | None = None):
+    # def recommend_for_user(self, user_id: str, limit: int = 20, refresh: bool = False, mix_ratio: float = 0.2, symbols: list[str] | None = None):
+    #     """
+    #     - 默认只用库里候选集：latest(200)
+    #     - refresh=True 时：先临时拉一小撮(≈limit*mix_ratio)，入库后与库里候选合并再排序
+    #     """
+    #     # 1) 候选：离线
+    #     offline = self.news_repo.latest(limit=200)
+
+    #     # 2) 可选：实时拉取一小撮并入库
+    #     if refresh:
+    #         try:
+    #             from app.adapters.fetchers.marketaux_fetcher import MarketauxFetcher, MarketauxConfig
+    #             from app.services.ingest_pipeline import IngestPipeline
+    #             from app.config import settings
+    #             mcfg = MarketauxConfig(
+    #                 api_key=settings.MARKETAUX_API_KEY,
+    #                 qps=float(getattr(settings, "FETCH_QPS", 0.5)),
+    #                 daily_budget=int(getattr(settings, "DAILY_BUDGET_MARKETAUX", 80)),
+    #                 page_size=3,  # 免费层友好
+    #             )
+    #             mfetch = MarketauxFetcher(mcfg)
+    #             # 如果没传 symbols，按你之前的兜底（us/in 或 env）
+    #             raw = mfetch.pull_recent(symbols=symbols or None, since_hours=6, max_pages=1)
+    #             pipe = IngestPipeline(news_repo=self.news_repo, embedder=self.embedder, watchlist=None)
+    #             pipe.ingest_dicts(raw)
+    #             # 再取一遍最新候选（让刚入库的也进来）
+    #             offline = self.news_repo.latest(limit=200)
+    #         except Exception:
+    #             # 有配额/网络问题时不要影响流程
+    #             pass
+
+    #     # 3) 打分排序
+    #     ranked = self.score_news_for_user(user_id, offline)
+    #     # 4) 整理返回
+    #     out = []
+    #     for it, sc in ranked[:limit]:
+    #         out.append({
+    #             "news_id": it.news_id,
+    #             "title": it.title,
+    #             "source": it.source,
+    #             "published_at": getattr(it, "published_at", None),
+    #             "tickers": getattr(it, "tickers", []) or [],
+    #             "topics": getattr(it, "topics", []) or [],
+    #             "url": getattr(it, "url", ""),
+    #             "score": sc,
+    #         })
+    #     return out
+
+
+    def recommend_for_user(
+        self,
+        user_id: str,
+        limit: int = 20,
+        refresh: bool = False,
+        mix_ratio: float = 0.2,
+        symbols: list[str] | None = None,
+        exclude_hours: int | None = None,   # ✅ 新增：过滤最近交互的时间窗（小时）
+    ):
         """
         - 默认只用库里候选集：latest(200)
         - refresh=True 时：先临时拉一小撮(≈limit*mix_ratio)，入库后与库里候选合并再排序
+        - 返回前会过滤掉最近交互过的新闻（时间窗默认 settings.RECENT_EXCLUDE_HOURS）
         """
+        from app.config import settings
+
         # 1) 候选：离线
         offline = self.news_repo.latest(limit=200)
 
@@ -241,7 +301,6 @@ class NewsService:
             try:
                 from app.adapters.fetchers.marketaux_fetcher import MarketauxFetcher, MarketauxConfig
                 from app.services.ingest_pipeline import IngestPipeline
-                from app.config import settings
                 mcfg = MarketauxConfig(
                     api_key=settings.MARKETAUX_API_KEY,
                     qps=float(getattr(settings, "FETCH_QPS", 0.5)),
@@ -249,7 +308,6 @@ class NewsService:
                     page_size=3,  # 免费层友好
                 )
                 mfetch = MarketauxFetcher(mcfg)
-                # 如果没传 symbols，按你之前的兜底（us/in 或 env）
                 raw = mfetch.pull_recent(symbols=symbols or None, since_hours=6, max_pages=1)
                 pipe = IngestPipeline(news_repo=self.news_repo, embedder=self.embedder, watchlist=None)
                 pipe.ingest_dicts(raw)
@@ -259,11 +317,26 @@ class NewsService:
                 # 有配额/网络问题时不要影响流程
                 pass
 
-        # 3) 打分排序
+        # 3) 打分排序（得到 [(NewsItem, score), ...]）
         ranked = self.score_news_for_user(user_id, offline)
+
+        # 3.5) ✅ 过滤最近交互
+        ex_hours = int(exclude_hours if exclude_hours is not None else getattr(settings, "RECENT_EXCLUDE_HOURS", 72))
+        try:
+            recent_ids = self.ev_repo.recent_news_ids(user_id=user_id, since_hours=ex_hours)
+        except Exception:
+            recent_ids = set()
+
+        ranked_filtered = [(it, sc) for (it, sc) in ranked if it.news_id not in recent_ids]
+
+        # 若过滤后不足 limit，可用“最近交互过”的做回填（避免空列表）
+        if len(ranked_filtered) < limit:
+            fallback = [(it, sc) for (it, sc) in ranked if it.news_id in recent_ids]
+            ranked_filtered.extend(fallback)
+
         # 4) 整理返回
         out = []
-        for it, sc in ranked[:limit]:
+        for it, sc in ranked_filtered[:limit]:
             out.append({
                 "news_id": it.news_id,
                 "title": it.title,

@@ -5,14 +5,14 @@ from app.adapters.llm.openai_llm import OpenAICompatLLM
 from app.ports.storage import UserRepoPort
 from app.services.auth_service import AuthService
 from app.services.user_service import UserService
-from config import settings
-from adapters.db.news_repo_mongo import NewsRepoMongo
-from adapters.vector.mongo_vector_index import MongoVectorIndex
-from adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
-from services.news_service import NewsService
-from services.rec_service import RecService
-from services.rag_service import RagService
-from services.forecast_service import ForecastService
+# from config import settings
+from app.adapters.db.news_repo_mongo import NewsRepoMongo
+from app.adapters.vector.mongo_vector_index import MongoVectorIndex
+from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
+from app.services.news_service import NewsService
+from app.services.rec_service import RecService
+from app.services.rag_service import RagService
+from app.services.forecast_service import ForecastService
 
 def get_user_repo() -> UserRepoMongo:
     return UserRepoMongo()

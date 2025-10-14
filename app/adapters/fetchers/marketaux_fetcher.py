@@ -135,56 +135,111 @@ class MarketauxFetcher:
     
 
     # === 修改：把 entities 聚合出 tickers/topics/sentiment ===
+    # def _norm_one(self, it: Dict) -> Dict:
+    #     title = it.get("title") or ""
+    #     text = (
+    #         it.get("main_text") or it.get("content") or
+    #         it.get("description") or it.get("snippet") or ""
+    #     )
+    #     src = (it.get("source") or {}).get("name") if isinstance(it.get("source"), dict) else it.get("source")
+    #     published = it.get("published_at") or it.get("published_at_utc") or it.get("published_at_local")
+
+    #     entities = it.get("entities") or []
+    #     tickers, ent_sent, topic_hints = [], [], []
+    #     tickers_from_entities = [
+    #         s.get("symbol")
+    #         for s in entities
+    #         if isinstance(s, dict) and (s.get("type") or "").lower() == "equity" and s.get("symbol")
+    #     ]
+
+    #     for e in entities:
+    #         if not isinstance(e, dict):
+    #             continue
+    #         if e.get("type") == "equity" and e.get("symbol"):
+    #             tickers.append(e["symbol"])
+    #         sc = e.get("sentiment_score")
+    #         if isinstance(sc, (int, float)):
+    #             ent_sent.append(float(sc))
+    #         # 行业/类型也可作为主题提示
+    #         ind = e.get("industry")
+    #         if isinstance(ind, str) and ind:
+    #             topic_hints.append(ind.title())
+    #         tpe = e.get("type")
+    #         if isinstance(tpe, str) and tpe and tpe.lower() not in ("equity",):
+    #             topic_hints.append(tpe.title())
+
+    #     # 整体情绪：实体情绪的均值（兜底为 0.0）
+    #     overall_sent = sum(ent_sent) / len(ent_sent) if ent_sent else 0.0
+
+    #     # topics：实体提示 + 关键词提示
+    #     # kw = self._kw_topics(title, text)
+    #     # topics = list(dict.fromkeys([t for t in (topic_hints + kw) if isinstance(t, str) and t.strip()]))
+        
+    #     kw_hit = self._kw_topics(title, text)
+    #     all_hints = kw_hit + topic_hints
+    #     normed = [x for x in ( _normalize_industry_name(x) for x in all_hints ) if x]
+    #     topics = normed[:1]  # 只保留一个标签
+
+    #     # tickers 去重；若为空再兜底 symbols 数组
+    #     symbols = it.get("symbols") or []
+    #     if symbols and isinstance(symbols, list):
+    #         symbols = [s for s in symbols if isinstance(s, str) and s.strip()]
+    #     tickers = list(dict.fromkeys(tickers or symbols))
+
+    #     return {
+    #         "news_id": it.get("uuid") or it.get("id") or it.get("url"),
+    #         "title": title,
+    #         "text": text,
+    #         "source": src,
+    #         "url": it.get("url") or "",
+    #         "published_at": published,
+    #         # "tickers": tickers,
+    #         "entities": entities,
+    #         "tickers": tickers_from_entities,
+    #         "topics": topics,
+    #         "sentiment": float(overall_sent),
+    #     }
+    
     def _norm_one(self, it: Dict) -> Dict:
         title = it.get("title") or ""
-        text = (
-            it.get("main_text") or it.get("content") or
-            it.get("description") or it.get("snippet") or ""
-        )
+        # 市面免费层通常不给全文：先 description → snippet
+        text = (it.get("description") or it.get("snippet") or "") or ""
         src = (it.get("source") or {}).get("name") if isinstance(it.get("source"), dict) else it.get("source")
         published = it.get("published_at") or it.get("published_at_utc") or it.get("published_at_local")
 
         entities = it.get("entities") or []
-        tickers, ent_sent, topic_hints = [], [], []
-        tickers_from_entities = [
-            s.get("symbol")
-            for s in entities
-            if isinstance(s, dict) and (s.get("type") or "").lower() == "equity" and s.get("symbol")
-        ]
+        ent_sents = []
+        industries = []
 
+        tickers = []
         for e in entities:
             if not isinstance(e, dict):
                 continue
-            if e.get("type") == "equity" and e.get("symbol"):
+            # 股票代码
+            if (e.get("type") or "").lower() == "equity" and e.get("symbol"):
                 tickers.append(e["symbol"])
+            # 行业与情感
+            ind = e.get("industry")
+            if isinstance(ind, str) and ind.strip():
+                industries.append(ind.strip())
             sc = e.get("sentiment_score")
             if isinstance(sc, (int, float)):
-                ent_sent.append(float(sc))
-            # 行业/类型也可作为主题提示
-            ind = e.get("industry")
-            if isinstance(ind, str) and ind:
-                topic_hints.append(ind.title())
-            tpe = e.get("type")
-            if isinstance(tpe, str) and tpe and tpe.lower() not in ("equity",):
-                topic_hints.append(tpe.title())
+                ent_sents.append(float(sc))
 
-        # 整体情绪：实体情绪的均值（兜底为 0.0）
-        overall_sent = sum(ent_sent) / len(ent_sent) if ent_sent else 0.0
+        # topics = 单一 industry；多时取出现最多者
+        topic = None
+        if industries:
+            from collections import Counter
+            topic = Counter(industries).most_common(1)[0][0]
 
-        # topics：实体提示 + 关键词提示
-        # kw = self._kw_topics(title, text)
-        # topics = list(dict.fromkeys([t for t in (topic_hints + kw) if isinstance(t, str) and t.strip()]))
-        
-        kw_hit = self._kw_topics(title, text)
-        all_hints = kw_hit + topic_hints
-        normed = [x for x in ( _normalize_industry_name(x) for x in all_hints ) if x]
-        topics = normed[:1]  # 只保留一个标签
+        overall_sent = sum(ent_sents) / len(ent_sents) if ent_sents else 0.0
 
-        # tickers 去重；若为空再兜底 symbols 数组
+        # 如果 entities 没有 symbol，再退回响应里的 symbols 字段
         symbols = it.get("symbols") or []
         if symbols and isinstance(symbols, list):
             symbols = [s for s in symbols if isinstance(s, str) and s.strip()]
-        tickers = list(dict.fromkeys(tickers or symbols))
+        if not tickers:
+            tickers = symbols
 
         return {
             "news_id": it.get("uuid") or it.get("id") or it.get("url"),
@@ -193,29 +248,10 @@ class MarketauxFetcher:
             "source": src,
             "url": it.get("url") or "",
             "published_at": published,
-            # "tickers": tickers,
-            "entities": entities,
-            "tickers": tickers_from_entities,
-            "topics": topics,
+            "tickers": list(dict.fromkeys(tickers)),
+            "topics": [topic] if topic else [],
             "sentiment": float(overall_sent),
         }
-    
-    # def _norm_one(self, it: Dict) -> Dict:
-        # return {
-        #     "news_id": it.get("uuid") or it.get("id") or it.get("url"),
-        #     "title": it.get("title") or "",
-        #     "text": it.get("description") or it.get("snippet") or "",
-        #     "source": (it.get("source") or {}).get("name") if isinstance(it.get("source"), dict) else it.get("source"),
-        #     "url": it.get("url") or "",
-        #     "published_at": it.get("published_at") or it.get("published_at_utc") or it.get("published_at_local"),
-        #     "tickers": (
-        #         [s.get("symbol") for s in (it.get("entities") or []) if isinstance(s, dict) and s.get("type") == "equity"]
-        #         or it.get("symbols")
-        #         or []
-        #     ),
-        #     "topics": [],
-        #     "sentiment": (it.get("sentiment_score") or 0.0),
-        # }
 
     def pull_recent(
         self,
@@ -236,10 +272,15 @@ class MarketauxFetcher:
             default_env = (getattr(settings, "MARKETAUX_DEFAULT_SYMBOLS", "") or "").strip()
             if default_env:
                 symbols = [s.strip() for s in default_env.split(",") if s.strip()]
-            elif region and region.lower() == "in":
-                symbols = ["TCS.NS", "INFY.NS", "RELIANCE.NS"]
             else:
-                symbols = ["AAPL", "NVDA", "MSFT"]
+                # 从 WATCHLIST_FILE 来
+                from app.utils.ticker_mapping import load_watchlist_simple
+                import os
+                wl_file = getattr(settings, "WATCHLIST_FILE", "")
+                symbols = load_watchlist_simple(wl_file) if os.path.exists(wl_file) else []
+                # 仍做一次保底（避免空 list）
+                if not symbols:
+                    symbols = ["AAPL","MSFT","NVDA"]
 
         if not symbols and not query:
             raise ValueError("marketaux needs at least `symbols` or `query` (free tier typically requires `symbols`).")

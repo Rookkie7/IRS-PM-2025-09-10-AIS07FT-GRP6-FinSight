@@ -1,30 +1,45 @@
 from __future__ import annotations
 from typing import Dict, List
-import json, re, csv
+import json, re, csv, os
 
-def load_watchlist(path: str) -> Dict[str, List[str]]:
+def load_watchlist_simple(path: str) -> list[str]:
     """
-    支持 JSON 或 CSV：
-    - JSON: { "AAPL": ["Apple","Apple Inc.","iPhone"], "TCS.NS": ["TCS","Tata Consultancy"] }
-    - CSV:  ticker,aliases   ->  AAPL,"Apple;Apple Inc.;iPhone"
-    返回：{ticker: [alias1, alias2, ...]}（全部小写）
+    读取一个仅含 ticker 列表(JSON 数组)的 watchlist。
     """
-    path = path.strip()
-    if path.lower().endswith(".json"):
-        with open(path, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        return {k.upper(): [a.lower() for a in v] for k, v in obj.items()}
-    elif path.lower().endswith(".csv"):
-        out = {}
-        with open(path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                t = (row.get("ticker") or "").upper()
-                aliases = (row.get("aliases") or "").split(";")
-                out[t] = [a.strip().lower() for a in aliases if a.strip()]
-        return out
-    else:
-        raise ValueError("watchlist file must be .json or .csv")
+    if not path or not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, list):
+        return [str(x).strip().upper() for x in data if str(x).strip()]
+    # 兼容 { "AAPL": [...], ... } 的旧格式
+    if isinstance(data, dict):
+        return [k.strip().upper() for k in data.keys()]
+    return []
+
+# def load_watchlist(path: str) -> Dict[str, List[str]]:
+#     """
+#     支持 JSON 或 CSV：
+#     - JSON: { "AAPL": ["Apple","Apple Inc.","iPhone"], "TCS.NS": ["TCS","Tata Consultancy"] }
+#     - CSV:  ticker,aliases   ->  AAPL,"Apple;Apple Inc.;iPhone"
+#     返回：{ticker: [alias1, alias2, ...]}（全部小写）
+#     """
+#     path = path.strip()
+#     if path.lower().endswith(".json"):
+#         with open(path, "r", encoding="utf-8") as f:
+#             obj = json.load(f)
+#         return {k.upper(): [a.lower() for a in v] for k, v in obj.items()}
+#     elif path.lower().endswith(".csv"):
+#         out = {}
+#         with open(path, "r", encoding="utf-8") as f:
+#             reader = csv.DictReader(f)
+#             for row in reader:
+#                 t = (row.get("ticker") or "").upper()
+#                 aliases = (row.get("aliases") or "").split(";")
+#                 out[t] = [a.strip().lower() for a in aliases if a.strip()]
+#         return out
+#     else:
+#         raise ValueError("watchlist file must be .json or .csv")
 
 def map_tickers(title: str, text: str, watch: Dict[str, List[str]]) -> List[str]:
     hay = f"{title}\n{text}".lower()

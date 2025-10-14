@@ -141,18 +141,18 @@ async def lifespan(app: FastAPI):
 from app.api.v1.auth_router import router as auth_router
 from app.api.v1.user_router import router as user_router
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Lifespan context"""
-    async with init_mongo_via_ssh():
-        # 启动阶段
-        repo = UserRepoMongo()
-        await repo.ensure_indexes()
-        print("✅ MongoDB indexes ensured at startup.")
-        # 交回控制权，开始处理请求
-        yield
-        # 关闭阶段（需要额外清理就放这里）
-        print("🛑 App shutting down... (cleanup if needed)")
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     """Lifespan context"""
+#     async with init_mongo_via_ssh():
+#         # 启动阶段
+#         repo = UserRepoMongo()
+#         await repo.ensure_indexes()
+#         print("✅ MongoDB indexes ensured at startup.")
+#         # 交回控制权，开始处理请求
+#         yield
+#         # 关闭阶段（需要额外清理就放这里）
+#         print("🛑 App shutting down... (cleanup if needed)")
 
 
 def create_app() -> FastAPI:

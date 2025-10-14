@@ -35,16 +35,6 @@ class Settings(BaseSettings):
     FETCH_QPS: float = Field(0.5, env="FETCH_QPS")                    # Marketaux 节流
     DAILY_BUDGET_MARKETAUX: int = Field(80, env="DAILY_BUDGET_MARKETAUX")
 
-    RSS_QPS: float = Field(1.0, env="RSS_QPS")
-    RSS_SOURCES_US: str = Field(
-        "https://feeds.a.dj.com/rss/RSSMarketsMain.xml,https://www.reuters.com/finance/markets/rss",
-        env="RSS_SOURCES_US"
-    )
-    RSS_SOURCES_IN: str = Field(
-        "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms,https://www.livemint.com/rss/markets",
-        env="RSS_SOURCES_IN"
-    )
-
     # —— 调度 Cron（分 时 日 月 周）——
     CRON_MARKETAUX_US: str = Field("0 * * * *", env="CRON_MARKETAUX_US")
     CRON_MARKETAUX_IN: str = Field("10 * * * *", env="CRON_MARKETAUX_IN")
@@ -61,6 +51,7 @@ class Settings(BaseSettings):
     # VECTOR_BACKEND: str = Field("mongo", env="VECTOR_BACKEND")  # mongo | pgvector
     VECTOR_BACKEND: str = Field("pgvector", env="VECTOR_BACKEND")  # mongo | pgvector
     PG_DSN: str = Field("postgresql://richsion@localhost:5432/finsight", env="PG_DSN")
+    RECENT_EXCLUDE_HOURS: int = Field(72, env="RECENT_EXCLUDE_HOURS")
     
     LLM_PROVIDER: str = Field("openai", env="LLM_PROVIDER")
     
