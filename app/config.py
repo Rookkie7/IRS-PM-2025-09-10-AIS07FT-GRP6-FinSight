@@ -1,7 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -10,18 +9,21 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(60 * 24, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
 
     APP_NAME: str = "Finsight"
+
     # SSH 隧道相关
     SSH_TUNNEL: bool = Field(False, alias="SSH_TUNNEL")
     SSH_HOST: str | None = None
     SSH_PORT: int = 22
     SSH_USER: str | None = None
     SSH_PEM_PATH: str | None = None
+    LOCAL_BIND_HOST: str | None = None
+
+    # Mongo
     REMOTE_MONGO_HOST: str = "127.0.0.1"
     REMOTE_MONGO_PORT: int = 27017
-    LOCAL_BIND_HOST: str = "127.0.0.1"
-    LOCAL_BIND_PORT: int = 0  # 0=随机
+    LOCAL_MONGO_HOST: str = "127.0.0.1"
+    LOCAL_MONGO_PORT: int = 0  # 0=随机
 
-    # Mongo 连接串：当 SSH_TUNNEL=False 时需要；开启隧道时可不填
     MONGO_URI: str | None = Field(default=None, alias="MONGO_URI")
     MONGO_DB: str = "finsight"
 
@@ -34,6 +36,19 @@ class Settings(BaseSettings):
     
     FETCH_QPS: float = Field(0.5, env="FETCH_QPS")                    # Marketaux 节流
     DAILY_BUDGET_MARKETAUX: int = Field(80, env="DAILY_BUDGET_MARKETAUX")
+
+    # Postgre
+    REMOTE_PG_HOST: str = "127.0.0.1"
+    REMOTE_PG_PORT: int = 27017
+    LOCAL_PG_HOST: str = "127.0.0.1"
+    LOCAL_PG_PORT: int = 0  # 0=随机
+    POSTGRES_URI: str = Field(..., env="POSTGRES_URI")
+    POSTGRES_USER: str = Field(..., env="POSTGRES_USER")
+    POSTGRES_PASSWORD: str = Field(..., env="POSTGRES_PASSWORD")
+    POSTGRES_DB: str = Field(..., env="POSTGRES_DB")
+
+    NEWS_FETCH_CRON: str = "0 * * * *"  # 每小时
+    DEFAULT_VECTOR_DIM: int = 32
 
     # —— 调度 Cron（分 时 日 月 周）——
     CRON_MARKETAUX_US: str = Field("0 * * * *", env="CRON_MARKETAUX_US")
@@ -48,7 +63,6 @@ class Settings(BaseSettings):
     PROJECTION_DIM: int = Field(64, env="PROJECTION_DIM")
     PROJECTION_SEED: int = Field(42, env="PROJECTION_SEED")
 
-    # VECTOR_BACKEND: str = Field("mongo", env="VECTOR_BACKEND")  # mongo | pgvector
     VECTOR_BACKEND: str = Field("pgvector", env="VECTOR_BACKEND")  # mongo | pgvector
     PG_DSN: str = Field("postgresql://richsion@localhost:5432/finsight", env="PG_DSN")
     RECENT_EXCLUDE_HOURS: int = Field(72, env="RECENT_EXCLUDE_HOURS")
@@ -56,7 +70,6 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = Field("openai", env="LLM_PROVIDER")
     
     NEWS_FETCH_CRON: str = "0 * * * *"  # 每小时
-    # DEFAULT_VECTOR_DIM: int = 32
     
     # 运行环境/调试
     ENV: str = Field("dev", env="ENV")        # dev | prod

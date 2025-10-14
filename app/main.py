@@ -5,9 +5,14 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 
-from app.adapters.db.mongo_client import init_mongo_via_ssh
-from app.adapters.db.user_repo_mongo import UserRepoMongo
+from app.adapters.db.database_client import init_mongo_via_ssh, init_postgres_via_ssh
+from app.adapters.db.news_repo import NewsRepo
+# from app.adapters.db.user_repo import UserRepo
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.config import settings
+from app.api.v1.stocks_router import router as stocks_router
+from app.api.v1.auth_router import router as auth_router
 from app.api.v1.news_router import router as news_router
 from app.api.v1.user_router import router as user_router
 from app.api.v1.rec_router import router as rec_router
@@ -17,9 +22,7 @@ from app.jobs.scheduler import create_scheduler
 
 # —— 依赖注入：全局单例（为了让 routers 通过 app.main.svc 获取服务实例）——
 from app.adapters.embeddings.hash_embedder import HashingEmbedder
-from app.adapters.embeddings.projecting_embedder import ProjectingEmbedder  # NEW
-
-# from app.adapters.embeddings.openai_embedder import OpenAIEmbedder
+from app.adapters.embeddings.projecting_embedder import ProjectingEmbedder
 
 from app.repositories.mongo_repos import MongoNewsRepo, MongoEventRepo, MongoProfileRepo
 from app.repositories.pg_profile_repo import PgProfileRepo
@@ -28,6 +31,7 @@ from app.repositories.inmemory import InMemoryNewsRepo, InMemoryProfileRepo, InM
 from app.services.news_service import NewsService
 from app.domain.models import NewsItem
 from app.utils.news_seed import SEED_NEWS
+from app.utils.healthy import check_database_connection
 from contextlib import asynccontextmanager
 
 from app.core.errors import http_exception_handler, validation_exception_handler, generic_exception_handler
@@ -99,60 +103,59 @@ news_repo, prof_repo, ev_repo = _build_repos(
 svc = NewsService(news_repo, prof_repo, ev_repo, embedder)
 sched = None
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global sched
-
-    # 可选：启动时导入种子数据
-    try:
-        svc.ingest([NewsItem(**n) for n in SEED_NEWS])
-    except Exception:
-        pass
-
-    # —— 启动调度器（仅 dev/DEBUG）——
-    # if settings.ENV.lower() == "dev" or settings.DEBUG:
-    #     try:
-    #         sched = create_scheduler(app, news_repo=news_repo, embedder=embedder)
-    #         sched.start()
-    #         print("[Scheduler] started with cron jobs")
-    #     except Exception as e:
-    #         print(f"[Scheduler] failed to start: {e}")
-
-    # —— 启动调度器（仅当 ENV=dev/DEBUG 且 ENABLE_SCHEDULER=1）——
-    if (settings.ENV.lower() == "dev" or settings.DEBUG) and getattr(settings, "ENABLE_SCHEDULER", 0):
-        try:
-            sched = create_scheduler(app, news_repo=news_repo, embedder=embedder)
-            sched.start()
-            print("[Scheduler] started with cron jobs")
-        except Exception as e:
-            print(f"[Scheduler] failed to start: {e}")
-    else:
-        print("[Scheduler] disabled (set ENABLE_SCHEDULER=1 to enable)")
-    # 应用运行中
-    yield
-
-    # —— 关闭调度器 —— 
-    if sched is not None:
-        try:
-            sched.shutdown(wait=False)
-            print("[Scheduler] shutdown ok")
-        except Exception as e:
-            print(f"[Scheduler] shutdown error: {e}")
-from app.api.v1.auth_router import router as auth_router
-from app.api.v1.user_router import router as user_router
-
 # @asynccontextmanager
 # async def lifespan(app: FastAPI):
-#     """Lifespan context"""
-#     async with init_mongo_via_ssh():
-#         # 启动阶段
-#         repo = UserRepoMongo()
-#         await repo.ensure_indexes()
-#         print("✅ MongoDB indexes ensured at startup.")
-#         # 交回控制权，开始处理请求
-#         yield
-#         # 关闭阶段（需要额外清理就放这里）
-#         print("🛑 App shutting down... (cleanup if needed)")
+#     global sched
+
+#     # 可选：启动时导入种子数据
+#     try:
+#         svc.ingest([NewsItem(**n) for n in SEED_NEWS])
+#     except Exception:
+#         pass
+
+#     # —— 启动调度器（仅 dev/DEBUG）——
+#     # if settings.ENV.lower() == "dev" or settings.DEBUG:
+#     #     try:
+#     #         sched = create_scheduler(app, news_repo=news_repo, embedder=embedder)
+#     #         sched.start()
+#     #         print("[Scheduler] started with cron jobs")
+#     #     except Exception as e:
+#     #         print(f"[Scheduler] failed to start: {e}")
+
+#     # —— 启动调度器（仅当 ENV=dev/DEBUG 且 ENABLE_SCHEDULER=1）——
+#     if (settings.ENV.lower() == "dev" or settings.DEBUG) and getattr(settings, "ENABLE_SCHEDULER", 0):
+#         try:
+#             sched = create_scheduler(app, news_repo=news_repo, embedder=embedder)
+#             sched.start()
+#             print("[Scheduler] started with cron jobs")
+#         except Exception as e:
+#             print(f"[Scheduler] failed to start: {e}")
+#     else:
+#         print("[Scheduler] disabled (set ENABLE_SCHEDULER=1 to enable)")
+#     # 应用运行中
+#     yield
+
+#     # —— 关闭调度器 —— 
+#     if sched is not None:
+#         try:
+#             sched.shutdown(wait=False)
+#             print("[Scheduler] shutdown ok")
+#         except Exception as e:
+#             print(f"[Scheduler] shutdown error: {e}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context"""
+    async with init_mongo_via_ssh(), init_postgres_via_ssh():
+        # 启动阶段
+        # user_repo = UserRepo()
+        news_repo = NewsRepo()
+        # await user_repo.ensure_indexes()
+        print("✅ MongoDB indexes ensured at startup.")
+        # 交回控制权，开始处理请求
+        yield
+        # 关闭阶段（需要额外清理就放这里）
+        print("🛑 App shutting down... (cleanup if needed)")
 
 
 def create_app() -> FastAPI:
@@ -167,13 +170,22 @@ def create_app() -> FastAPI:
     )
 
     # 中间件
-    app.add_middleware(RequestContextMiddleware)
+    # app.add_middleware(RequestContextMiddleware)
 
+     # 配置CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # 生产环境应该限制具体域名
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
     # 全局异常处理
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)
-    
+
     # 注册路由
     app.include_router(auth_router)
     app.include_router(user_router)
@@ -183,15 +195,55 @@ def create_app() -> FastAPI:
     app.include_router(forecast_router)
     app.include_router(user_router)
 
-    # 调试与维护路由（仅 dev/DEBUG）
-    if settings.ENV.lower() == "dev" or settings.DEBUG:
-        from app.api.v1.debug_router import router as debug_router
-        app.include_router(debug_router)
+    # # 调试与维护路由（仅 dev/DEBUG）
+    # if settings.ENV.lower() == "dev" or settings.DEBUG:
+    #     from app.api.v1.debug_router import router as debug_router
+    #     app.include_router(debug_router)
 
-    # 健康检查接口
+    @app.get("/")
+    async def root():
+        """
+        根路径
+        """
+        db_status = check_database_connection()
+        return {
+            "message": "股票推荐系统 API",
+            "status": "running",
+            "version": "1.0.0",
+            "database_status": db_status,
+            "endpoints": {
+                "文档": "/docs",
+                "健康检查": "/health",
+                "股票数据": "/api/stocks",
+                "用户管理": "/api/users"
+            }
+        }
+
     @app.get("/health")
-    async def health():
-        return {"status": "ok"}
+    async def health_check():
+        """
+        健康检查端点
+        """
+        db_status = check_database_connection()
+        return {
+            "status": "healthy",
+            "service": "stock_recommendation",
+            "database": db_status,
+            "timestamp": "2024-01-01T00:00:00Z"  # 实际应该用datetime
+        }
+
+    @app.get("/debug/status")
+    async def debug_status():
+        """
+        调试状态检查
+        """
+        db_status = check_database_connection()
+        return {
+            "status": "running",
+            "service": "stock_recommendation",
+            "version": "1.0.0",
+            "database": db_status,
+        }
 
     return app
 

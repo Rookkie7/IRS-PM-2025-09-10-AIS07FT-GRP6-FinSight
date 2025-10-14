@@ -1,157 +1,19 @@
-from __future__ import annotations
-from fastapi import APIRouter, Depends, Query, HTTPException
-from pydantic import BaseModel, Field
-from app.domain.models import UserProfile, BehaviorEvent
-from app.services.news_service import NewsService
-from app.services.auth_service import AuthService
-from app.services.user_service import UserService
-from app.model.models import UserPublic
-from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from typing import List
 from pymongo.database import Database
-from app.deps import get_auth_service, get_user_service
+
 from app.adapters.db.database_client import get_postgres_db, get_mongo_db
+from app.services.user_service import UserService
 
+router = APIRouter(prefix="/api/users", tags=["users"])
 
-def get_service() -> NewsService:
-    from app.main import svc
-    return svc
-
-router = APIRouter(prefix="/user", tags=["user"])
-
-@router.post("/profile/init_news")
-def init_profile(user_id: str = "demo", 
-                 reset: bool = Query(False, description="是否重置已有画像为零向量"),
-                 service: NewsService = Depends(get_service)) -> UserProfile:
-    prof = service.prof_repo.get_or_create(user_id)
-    if reset:
-        dim = getattr(service.embedder, "dim", len(prof.vector) or 32)
-        prof.vector = [0.0]*dim
-        service.prof_repo.save(prof)
-    return prof
-
-@router.post("/event")
-def add_event(ev: BehaviorEvent, service: NewsService = Depends(get_service)):
-    prof = service.record_event_and_update_profile(ev)
-    return {"ok": True, "user_id": ev.user_id, "profile_normed_head": prof.vector[:5]}
-
-class ClickEvent(BaseModel):
-    user_id: str = "demo"
-    news_id: str
-    dwell_ms: int = 0
-    liked: bool = False
-    bookmarked: bool = False
-
-class LikeEvent(BaseModel):
-    user_id: str = "demo"
-    news_id: str
-
-class BookmarkEvent(BaseModel):
-    user_id: str = "demo"
-    news_id: str
-
-@router.post("/event/click")
-def user_click(ev: ClickEvent, service: NewsService = Depends(get_service)):
-    # 取新闻向量（语义 + 画像）
-    doc = service.news_repo.get(ev.news_id)
-    if not doc:
-        raise HTTPException(404, "news not found")
-
-    news_sem = list(getattr(doc, "vector", []) or [])
-    news_prof = list(getattr(doc, "vector_prof_20d", []) or [])
-
-    # 简单权重：点击=1，>10s=1.5，like/bookmark 各+0.5
-    w = 1.0
-    if ev.dwell_ms >= 10000: w += 0.5
-    if ev.liked: w += 0.5
-    if ev.bookmarked: w += 0.5
-
-    # 更新用户画像
-    service.prof_repo.update_user_vectors_from_event(
-        user_id=ev.user_id,
-        news_sem=news_sem,
-        news_prof=news_prof,
-        weight=w,
-    )
-
-    service.ev_repo.add(BehaviorEvent(
-        user_id=ev.user_id,
-        news_id=ev.news_id,
-        type="click",
-        ts=datetime.now(timezone.utc),
-        dwell_ms=ev.dwell_ms,
-        liked=ev.liked,
-        bookmarked=ev.bookmarked,
-    ))
-    return {"ok": True, "weight": w}
-
-@router.post("/event/like")
-def user_like(ev: LikeEvent, service: NewsService = Depends(get_service)):
-    doc = service.news_repo.get(ev.news_id)
-    if not doc:
-        raise HTTPException(404, "news not found")
-    news_sem = list(getattr(doc, "vector", []) or [])
-    news_prof = list(getattr(doc, "vector_prof_20d", []) or [])
-
-    # like 权重偏低，聚合“认同”信号
-    w = 0.7
-    service.prof_repo.update_user_vectors_from_event(
-        user_id=ev.user_id, news_sem=news_sem, news_prof=news_prof, weight=w,
-    )
-    return {"ok": True, "weight": w}
-
-@router.post("/event/bookmark")
-def user_bookmark(ev: BookmarkEvent, service: NewsService = Depends(get_service)):
-    doc = service.news_repo.get(ev.news_id)
-    if not doc:
-        raise HTTPException(404, "news not found")
-    news_sem = list(getattr(doc, "vector", []) or [])
-    news_prof = list(getattr(doc, "vector_prof_20d", []) or [])
-
-    # bookmark 权重略高，表示“强偏好/留存”
-    w = 1.2
-    service.prof_repo.update_user_vectors_from_event(
-        user_id=ev.user_id, news_sem=news_sem, news_prof=news_prof, weight=w,
-    )
-    return {"ok": True, "weight": w}
-
-
-
-
-# router = APIRouter(prefix="/users", tags=["users"])
-
-class ProfileUpdateIn(BaseModel):
-    full_name: str | None = None
-    bio: str | None = None
-    interests: list[str] = []
-    sectors: list[str] = []
-    tickers: list[str] = []
-
-@router.get("/me", response_model=UserPublic)
-async def me(auth: AuthService = Depends(get_auth_service)):
-    u = await auth.get_current_user()
-    return UserPublic(
-        id=u.id, email=u.email, username=u.username,
-        created_at=u.created_at, profile=u.profile, embedding=u.embedding
-    )
-
-@router.put("/me")
-async def update_me(payload: ProfileUpdateIn, auth: AuthService = Depends(get_auth_service), usvc: UserService = Depends(get_user_service)):
-    u = await auth.get_current_user()
-    profile = {
-        "full_name": payload.full_name,
-        "bio": payload.bio,
-        "interests": payload.interests,
-        "sectors": payload.sectors,
-        "tickers": payload.tickers,
-    }
-    await usvc.update_profile_and_embed(u, profile)
-    return {"ok": True}
 
 @router.post("/profile/init")
 async def init_user_profile(
         user_id: str = Query(..., description="用户ID"),
         reset: bool = Query(False, description="是否重置现有用户画像"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_db)
 ):
     """
     初始化20维用户画像
@@ -183,7 +45,7 @@ async def create_custom_user_profile(
         user_id: str = Query(..., description="用户ID"),
         industry_preferences: str = Query(..., description="11维行业偏好，逗号分隔"),
         investment_preferences: str = Query(..., description="9维投资偏好，逗号分隔"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_db)
 ):
     """
     创建自定义用户画像
@@ -223,7 +85,7 @@ async def create_custom_user_profile(
 @router.get("/profile/detail")
 async def get_user_profile_detail(
         user_id: str = Query(..., description="用户ID"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_db)
 ):
     """
     获取用户画像详细信息
@@ -248,7 +110,7 @@ async def get_user_profile_detail(
 @router.get("/vector/{user_id}")
 async def get_user_vector(
         user_id: str,
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_db)
 ):
     """
     获取用户20维向量
@@ -279,7 +141,7 @@ async def update_user_behavior(
         stock_symbol: str = Query(..., description="股票代码"),
         stock_sector: str = Query(None, description="股票行业，如果不提供尝试从MongoDB获取"),
         duration: float = Query(0, description="停留时间(秒)"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_db),
         mongo_db: Database = Depends(get_mongo_db)
 ):
     """
@@ -331,7 +193,7 @@ async def update_user_preferences(
         user_id: str = Query(..., description="用户ID"),
         industry_preferences: str = Query(None, description="11维行业偏好，逗号分隔"),
         investment_preferences: str = Query(None, description="9维投资偏好，逗号分隔"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_db)
 ):
     """
     直接更新用户偏好
@@ -381,7 +243,7 @@ async def update_user_preferences(
 @router.get("/preferences/explain")
 async def explain_user_preferences(
         user_id: str = Query(..., description="用户ID"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_db)
 ):
     """
     解释用户偏好含义

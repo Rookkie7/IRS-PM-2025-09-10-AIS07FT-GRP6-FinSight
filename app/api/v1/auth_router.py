@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, EmailStr
 
-from app.adapters.db.user_repo_mongo import UserRepoMongo
+from app.adapters.db.user_repo import UserRepo
 from app.model.models import UserCreate, Token, UserPublic, UserInDB
 from app.ports.storage import UserRepoPort
 from app.services.auth_service import AuthService
@@ -26,7 +26,7 @@ def to_user_public(u: UserInDB) -> UserPublic:
 async def register_user(payload: UserCreate,
                         svc: AuthService = Depends(get_auth_service),
                         embedder=Depends(get_embedder),
-                        user_repo: UserRepoMongo = Depends(get_user_repo)):
+                        user_repo: UserRepo = Depends(get_user_repo)):
     uid = await svc.register(payload, embedder=embedder, dim=32)
     u: UserInDB | None = await user_repo.get_by_id(uid)
     assert u is not None, "user not found"
