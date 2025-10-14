@@ -29,6 +29,16 @@ from app.services.forecast_service import ForecastService
 from app.services.stock_recommender import MultiObjectiveRecommender
 from app.config import settings
 
+
+from app.config import settings
+from app.adapters.db.news_repo import NewsRepo
+from app.adapters.vector.mongo_vector_index import MongoVectorIndex
+from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
+from app.services.news_service import NewsService
+from app.services.rec_service import RecService
+from app.services.rag_service import RagService
+from app.services.forecast_service import ForecastService
+
 def get_query_embedder():
     # You can also use OpenAI Embeddings; here we use the local SB model
     return LocalEmbeddingProvider()
