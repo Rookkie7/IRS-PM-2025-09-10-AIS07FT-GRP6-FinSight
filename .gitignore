@@ -1,0 +1,89 @@
+# OS / 编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python 基本
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.dist/
+build/
+dist/
+pip-wheel-metadata/
+.eggs/
+
+# 虚拟环境 / 包管理
+.venv/
+venv/
+env/
+ENV/
+*.env
+*.env.*
+!.env.example
+
+# 测试 / 质量
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# 日志 / 运行时
+logs/
+*.log
+*.pid
+*.out
+*.err
+
+# Jupyter / 临时
+.ipynb_checkpoints/
+*.ipynb
+.mnt/
+mnt/
+sandbox/
+tmp/
+temp/
+
+# 本地数据/缓存（避免误传私有数据）
+data/
+data/**/*
+datasets/
+cache/
+cache/**/*
+uploads/
+uploads/**/*
+checkpoints/
+checkpoints/**/*
+
+# 本地配置（如果有示例版，保留 .example 文件）
+config.local.*
+*.local.yaml
+*.local.yml
+*.local.json
+
+# 前端（若无前端可忽略）
+node_modules/
+*.tsbuildinfo
+
+# Postgres / Mongo 备份
+*.dump
+*.sql
+*.bson
+*.archive
+
+# 证书/密钥（确保 .env 内有这些即可）
+*.pem
+*.crt
+*.key
+
+# Sentence-Transformers/模型（若你本地落了模型文件）
+models/
+models/**/*

@@ -1,7 +1,12 @@
 # app/main.py
 from __future__ import annotations
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI
+
+from app.adapters.db.mongo_client import init_mongo_via_ssh
+from app.adapters.db.user_repo_mongo import UserRepoMongo
 from app.config import settings
 from app.api.v1.news_router import router as news_router
 from app.api.v1.user_router import router as user_router
@@ -133,6 +138,22 @@ async def lifespan(app: FastAPI):
             print("[Scheduler] shutdown ok")
         except Exception as e:
             print(f"[Scheduler] shutdown error: {e}")
+from app.api.v1.auth_router import router as auth_router
+from app.api.v1.user_router import router as user_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context"""
+    async with init_mongo_via_ssh():
+        # 启动阶段
+        repo = UserRepoMongo()
+        await repo.ensure_indexes()
+        print("✅ MongoDB indexes ensured at startup.")
+        # 交回控制权，开始处理请求
+        yield
+        # 关闭阶段（需要额外清理就放这里）
+        print("🛑 App shutting down... (cleanup if needed)")
+
 
 def create_app() -> FastAPI:
     """
@@ -142,7 +163,7 @@ def create_app() -> FastAPI:
         title=settings.APP_NAME,
         version="1.0.0",
         description="Finsight Backend APIs",
-        lifespan=lifespan
+        lifespan=lifespan,
     )
 
     # 中间件
@@ -154,6 +175,8 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, generic_exception_handler)
     
     # 注册路由
+    app.include_router(auth_router)
+    app.include_router(user_router)
     app.include_router(news_router)
     app.include_router(rec_router)
     app.include_router(rag_router)

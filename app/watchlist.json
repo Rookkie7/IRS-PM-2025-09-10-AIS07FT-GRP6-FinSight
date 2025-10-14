@@ -1,0 +1,7 @@
+{
+  "AAPL": ["Apple", "Apple Inc.", "iPhone"],
+  "NVDA": ["NVIDIA", "GeForce", "CUDA"],
+  "MSFT": ["Microsoft", "Azure"],
+  "TCS.NS": ["TCS", "Tata Consultancy"],
+  "INFY.NS": ["Infosys", "INFY"]
+}
