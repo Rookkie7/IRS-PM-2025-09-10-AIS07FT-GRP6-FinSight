@@ -1,10 +1,10 @@
-from sqlalchemy.orm import Session
 import numpy as np
 import logging
 from typing import List, Dict, Any, Optional
 import random
 from datetime import datetime
 
+from app.adapters.db.database_client import get_postgres_db
 from app.model.models import UserProfile
 
 logger = logging.getLogger(__name__)
@@ -17,10 +17,17 @@ SECTOR_LIST = [
 ]
 
 
+from typing import Optional, List
+from app.ports.storage import UserRepoPort
+from app.model.models import UserInDB
+
 class UserService:
-    def __init__(self, db: Session):
-        self.db = db
+    def __init__(self, repo: UserRepoPort, embedder, dim: int = 32):
+        self.db = get_postgres_db()
         self.sector_list = SECTOR_LIST
+        self.repo = repo
+        self.embedder = embedder
+        self.dim = dim
 
     def init_user_profile(self, user_id: str, reset: bool = False,
                           profile_data: Dict[str, Any] = None) -> Optional[UserProfile]:
@@ -87,6 +94,7 @@ class UserService:
         # 构建20维向量
         vector_20d = profile.build_vector_from_components()
         profile.set_profile_vector_20d(vector_20d)
+
 
         return profile
 
@@ -230,3 +238,8 @@ class UserService:
 
         except ValueError:
             pass  # 行业不在预定义列表中
+
+    async def update_profile_and_embed(self, user: UserInDB, profile: dict) -> None:
+        text = "\n".join([f"{k}: {v}" for k, v in profile.items() if v])
+        vec = (await self.embedder.embed([text or user.username], dim=self.dim))[0]
+        await self.repo.update_profile_and_embedding(user.id, profile, vec)

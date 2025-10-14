@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
 from pymongo.database import Database
 from typing import List
 
@@ -12,7 +11,7 @@ router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 @router.post("/fetch-raw-data")
 async def fetch_raw_stock_data(
         symbols: str = Query(..., description="股票代码列表，例如：AAPL,GOOG,MSFT"),
-        postgres_db: Session = Depends(get_postgres_db),
+        postgres_db: Database = Depends(get_postgres_db),
         mongo_db: Database = Depends(get_mongo_db)
 ):
     """
@@ -39,7 +38,7 @@ async def fetch_raw_stock_data(
 @router.post("/update-vectors")
 async def update_stock_vectors(
         symbols: str = Query(..., description="股票代码列表，逗号分隔"),  # 只接受字符串
-        postgres_db: Session = Depends(get_postgres_db),
+        postgres_db: Database = Depends(get_postgres_db),
         mongo_db: Database = Depends(get_mongo_db)
 ):
     """
@@ -69,7 +68,7 @@ async def update_stock_vectors(
 async def get_stock_recommendations(
         user_id: str = Query(..., description="用户ID"),
         top_k: int = Query(5, ge=1, le=20, description="推荐数量"),
-        postgres_db: Session = Depends(get_postgres_db),
+        postgres_db: Database = Depends(get_postgres_db),
         mongo_db: Database = Depends(get_mongo_db)
 ):
     """
@@ -110,7 +109,7 @@ async def get_stock_recommendations(
 
 @router.get("/list")
 async def get_all_stocks(
-        postgres_db: Session = Depends(get_postgres_db),
+        postgres_db: Database = Depends(get_postgres_db),
         mongo_db: Database = Depends(get_mongo_db)
 ):
     """

@@ -1,9 +1,13 @@
 # app/main.py
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI
+
+from app.adapters.db.database_client import init_mongo_via_ssh, init_postgres_via_ssh
+from app.adapters.db.news_repo import NewsRepo
+from app.adapters.db.user_repo import UserRepo
 from fastapi.middleware.cors import CORSMiddleware
-import logging
-from dotenv import load_dotenv
 
 from app.config import settings
 from app.api.v1.news_router import router as news_router
@@ -11,9 +15,25 @@ from app.api.v1.rec_router import router as rec_router
 from app.api.v1.rag_router import router as rag_router
 from app.api.v1.forecast_router import router as forecast_router
 from app.api.v1.stocks_router import router as stocks_router
-from app.api.v1.users_router import router as users_router
 
-from app.adapters.database_client import create_tables, check_database_connection
+from app.api.v1.auth_router import router as auth_router
+from app.api.v1.user_router import router as user_router
+from app.utils.healthy import check_database_connection
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context"""
+    async with init_mongo_via_ssh(), init_postgres_via_ssh():
+        # 启动阶段
+        user_repo = UserRepo()
+        news_repo = NewsRepo()
+        await user_repo.ensure_indexes()
+        print("✅ MongoDB indexes ensured at startup.")
+        # 交回控制权，开始处理请求
+        yield
+        # 关闭阶段（需要额外清理就放这里）
+        print("🛑 App shutting down... (cleanup if needed)")
 
 
 def create_app() -> FastAPI:
@@ -24,6 +44,7 @@ def create_app() -> FastAPI:
         title=settings.APP_NAME,
         version="1.0.0",
         description="Finsight Backend APIs",
+        lifespan=lifespan,
     )
 
     # 配置CORS
@@ -36,35 +57,13 @@ def create_app() -> FastAPI:
     )
 
     # 注册路由
+    app.include_router(auth_router)
+    app.include_router(user_router)
     app.include_router(news_router)
     app.include_router(rec_router)
     app.include_router(rag_router)
     app.include_router(forecast_router)
     app.include_router(stocks_router)
-    app.include_router(users_router)
-
-    # 加载环境变量
-    load_dotenv()
-
-    # 配置日志
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    logger = logging.getLogger(__name__)
-
-    # 创建数据库表
-    try:
-        create_tables()
-        logger.info("✅ 数据库表创建成功")
-    except Exception as e:
-        logger.error(f"❌ 数据库表创建失败: {e}")
-        raise
-
-    # 检查数据库连接
-    db_status = check_database_connection()
-    logger.info(f"📊 数据库连接状态: {db_status}")
-
     @app.get("/")
     async def root():
         """
