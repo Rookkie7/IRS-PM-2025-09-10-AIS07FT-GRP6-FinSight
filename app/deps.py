@@ -29,6 +29,14 @@ from app.services.forecast_service import ForecastService
 from app.services.stock_recommender import MultiObjectiveRecommender
 from app.config import settings
 
+# from config import settings
+from app.adapters.db.news_repo_mongo import NewsRepoMongo
+from app.adapters.vector.mongo_vector_index import MongoVectorIndex
+from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
+from app.services.news_service import NewsService
+from app.services.rec_service import RecService
+from app.services.rag_service import RagService
+from app.services.forecast_service import ForecastService
 
 from app.config import settings
 from app.adapters.db.news_repo import NewsRepo
@@ -86,6 +94,16 @@ def get_llm():
         # fallback
     return OpenAICompatLLM()
 
+def get_query_embedder():
+    # You can also use OpenAI Embeddings; here we use the local SB model
+    return LocalEmbeddingProvider()
+
+def get_vector_index():
+    # Can be switched to pgvector_index.PgVectorIndex() according to settings.VECTOR_BACKEND
+    return MongoVectorIndex(collection_name="news")  # 你也可以为 stocks 建独立索引/集合
+
+def get_embedder():
+    return LocalEmbeddingProvider(model_name="all-MiniLM-L6-v2")  # 或 OpenAIEmbeddingProvider()
 
 def get_news_index():
     return MongoVectorIndex(collection_name="news")

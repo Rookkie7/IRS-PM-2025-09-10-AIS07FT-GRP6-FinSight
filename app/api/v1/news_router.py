@@ -13,7 +13,7 @@ from app.config import settings
 
 from app.adapters.fetchers.marketaux_fetcher import MarketauxFetcher, MarketauxConfig
 from app.adapters.fetchers.rss_fetcher import RSSFetcher
-from app.utils.ticker_mapping import load_watchlist
+from app.utils.ticker_mapping import load_watchlist_simple
 from app.services.ingest_pipeline import IngestPipeline
 from requests.exceptions import HTTPError
 from fastapi.responses import JSONResponse
@@ -97,7 +97,7 @@ def ingest_pull(
     """
     # 读取 watchlist（有错则忽略）
     try:
-        watch = load_watchlist(settings.WATCHLIST_FILE) if getattr(settings, "WATCHLIST_FILE", None) else {}
+        watch = load_watchlist_simple(settings.WATCHLIST_FILE) if getattr(settings, "WATCHLIST_FILE", None) else {}
     except Exception:
         watch = {}
 

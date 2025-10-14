@@ -1,7 +1,6 @@
-import textwrap
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -76,6 +75,8 @@ class Settings(BaseSettings):
 
     VECTOR_BACKEND: str = Field("mongo", env="VECTOR_BACKEND")  # mongo | pgvector
     PG_DSN: str = Field("postgresql://richsion@localhost:5432/finsight", env="PG_DSN")
+    RECENT_EXCLUDE_HOURS: int = Field(72, env="RECENT_EXCLUDE_HOURS")
+
 
     LLM_PROVIDER: str = Field("openai", env="LLM_PROVIDER")
     NEWS_FETCH_CRON: str = "0 * * * *"  # 每小时

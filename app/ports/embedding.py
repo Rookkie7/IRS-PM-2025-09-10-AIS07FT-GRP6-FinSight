@@ -1,10 +1,9 @@
-from typing import List
-
-class EmbeddingProviderPort:
-    ...
-
 from __future__ import annotations
 from typing import Protocol, List
+
+# class EmbeddingProviderPort:
+#     ...
+
 
 class EmbeddingProviderPort(Protocol):
     """嵌入提供者端口（后续可换 sentence-transformers / OpenAI embeddings）"""

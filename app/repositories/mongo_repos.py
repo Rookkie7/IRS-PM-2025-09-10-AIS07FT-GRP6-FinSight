@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Iterable, List, Optional, Tuple
 from pymongo import UpdateOne  
-from datetime import datetime, timezone 
+from datetime import datetime, timezone, timedelta 
 from pymongo import MongoClient, ASCENDING
 from app.domain.models import NewsItem, BehaviorEvent, UserProfile
 
@@ -224,6 +224,25 @@ class MongoEventRepo:
     def all(self) -> List[BehaviorEvent]:
         return [BehaviorEvent(**doc) for doc in self.col.find().sort("ts", -1)]
 
+    def recent_interacted_news_ids(self, user_id: str, since_hours: int = 72) -> set[str]:
+        """
+        返回用户最近 since_hours 小时内有过交互的 news_id 集合（click / like / bookmark）。
+        你的 BehaviorEvent 里如果有 liked/bookmarked 字段，这里一并视作“交互”。
+        """
+        since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+        q = {"user_id": user_id, "ts": {"$gte": since}}
+        # 如果你的事件集合里字段名不同（如 dwell_ms / liked / bookmarked），按需调整投影
+        cur = self.col.find(q, {"_id": 0, "news_id": 1})
+        return {d.get("news_id") for d in cur if d.get("news_id")}
+    
+    def recent_news_ids(self, user_id: str, since_hours: int = 72) -> set[str]:
+        """返回指定时间窗内此用户交互过的 news_id 集合。"""
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=int(since_hours))
+        cur = self.col.find(
+            {"user_id": user_id, "ts": {"$gte": cutoff}},
+            {"_id": 0, "news_id": 1}
+        )
+        return {d.get("news_id") for d in cur if d.get("news_id")}
 
 class MongoProfileRepo:
     """把用户画像也存 Mongo（用于 VECTOR_BACKEND=mongo）"""

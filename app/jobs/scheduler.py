@@ -5,7 +5,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import os
 
 from app.adapters.fetchers.marketaux_fetcher import MarketauxFetcher, MarketauxConfig
-from app.utils.ticker_mapping import load_watchlist
+from app.utils.ticker_mapping import load_watchlist_simple
 from app.services.ingest_pipeline import IngestPipeline
 from app.config import settings
 
@@ -77,6 +77,10 @@ from app.config import settings
 
 #     return scheduler
 
+
+
+
+
 def create_scheduler(app, news_repo, embedder):
     """
     创建并返回 APScheduler（不自动启动），提供两个 Marketaux 任务：
@@ -85,10 +89,13 @@ def create_scheduler(app, news_repo, embedder):
     """
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # watchlist（决定 us/in symbols 切分）
-    watch = {}
+    watch = []
     if os.path.exists(getattr(settings, "WATCHLIST_FILE", "")):
-        watch = load_watchlist(settings.WATCHLIST_FILE)
+        watch = load_watchlist_simple(settings.WATCHLIST_FILE)
+
+    # 读取股票池按地区划分（若你仍区分 IN/US 可按后缀 .NS 拆分，否则直接一组）
+    us_symbols = [s for s in watch if not s.endswith(".NS")]
+    in_symbols = [s for s in watch if s.endswith(".NS")]
 
     pipe = IngestPipeline(news_repo=news_repo, embedder=embedder, watchlist=watch)
 

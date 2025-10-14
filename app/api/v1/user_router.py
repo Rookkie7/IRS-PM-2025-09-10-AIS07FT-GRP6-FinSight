@@ -13,6 +13,8 @@ from pymongo.database import Database
 
 from app.adapters.db.database_client import get_postgres_session, get_mongo_db
 from app.services.user_service import UserService
+from app.deps import get_auth_service, get_user_service
+from datetime import datetime, timezone
 from app.services.stock_service import StockService
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -23,7 +25,7 @@ def get_service() -> NewsService:
     from app.main import svc
     return svc
 
-router = APIRouter(prefix="/api/user", tags=["user"])
+router = APIRouter(prefix="/user", tags=["user"])
 
 @router.post("/profile/init")
 def init_profile(user_id: str = "demo",
@@ -403,6 +405,16 @@ async def explain_user_preferences(
         news_prof=news_prof,
         weight=w,
     )
+
+    service.ev_repo.add(BehaviorEvent(
+        user_id=ev.user_id,
+        news_id=ev.news_id,
+        type="click",
+        ts=datetime.now(timezone.utc),
+        dwell_ms=ev.dwell_ms,
+        liked=ev.liked,
+        bookmarked=ev.bookmarked,
+    ))
     return {"ok": True, "weight": w}
 
 @router.post("/event/like")

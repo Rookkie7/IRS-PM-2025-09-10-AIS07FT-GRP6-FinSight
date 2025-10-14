@@ -238,20 +238,69 @@ class PgProfileRepo:
 
     # ------- 老接口（保留兼容）：vector 单列 -------
 
-    def get_or_create(self, user_id: str) -> UserProfile:
-        """老接口：返回/创建一条仅含单列 vector 的 UserProfile（兼容现有代码）。"""
-        with self._conn() as conn, conn.cursor() as cur:
-            cur.execute("SELECT user_id, vector FROM user_profiles WHERE user_id=%s", (user_id,))
-            row = cur.fetchone()
-            if row:
-                vec = self._to_list(row["vector"]) or _zero(self.dim)
-                return UserProfile(user_id=row["user_id"], vector=vec)
+    # def get_or_create(self, user_id: str) -> UserProfile:
+    #     """老接口：返回/创建一条仅含单列 vector 的 UserProfile（兼容现有代码）。"""
+    #     with self._conn() as conn, conn.cursor() as cur:
+    #         cur.execute("SELECT user_id, vector FROM user_profiles WHERE user_id=%s", (user_id,))
+    #         row = cur.fetchone()
+    #         if row:
+    #             vec = self._to_list(row["vector"]) or _zero(self.dim)
+    #             return UserProfile(user_id=row["user_id"], vector=vec)
 
-            zero_vec = _zero(self.dim)
-            cur.execute(
-                "INSERT INTO user_profiles(user_id, vector) VALUES (%s, %s) RETURNING user_id, vector",
-                (user_id, zero_vec)
-            )
+    #         zero_vec = _zero(self.dim)
+    #         cur.execute(
+    #             "INSERT INTO user_profiles(user_id, vector) VALUES (%s, %s) RETURNING user_id, vector",
+    #             (user_id, zero_vec)
+    #         )
+    #         r = cur.fetchone()
+    #         conn.commit()
+    #         return UserProfile(user_id=r["user_id"], vector=self._to_list(r["vector"]) or _zero(self.dim))
+
+    def get_or_create(self, user_id: str) -> UserProfile:
+        """
+        兼容老接口：返回/创建一条仅含单列 vector 的 UserProfile。
+        但在“创建”或“发现旧行有 NULL”时，会顺手把三路向量补成零向量，避免后续全是 NULL。
+        """
+        z64 = _zero(DEFAULT_DIM_SEM)
+        z20 = _zero(DEFAULT_DIM_PROF)
+        with self._conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT user_id, vector,
+                    user_semantic_64d_short, user_semantic_64d_long, user_profile_20d
+                FROM user_profiles WHERE user_id=%s
+            """, (user_id,))
+            row = cur.fetchone()
+
+            if row:
+                # 单列老向量兜底
+                base_vec = self._to_list(row["vector"]) or _zero(self.dim)
+
+                # 如果三路里有 NULL，顺手补零并落库
+                need_fix = (
+                    row["user_semantic_64d_short"] is None or
+                    row["user_semantic_64d_long"]  is None or
+                    row["user_profile_20d"]        is None
+                )
+                if need_fix:
+                    cur.execute("""
+                        UPDATE user_profiles
+                        SET user_semantic_64d_short = COALESCE(user_semantic_64d_short, %s),
+                            user_semantic_64d_long  = COALESCE(user_semantic_64d_long,  %s),
+                            user_profile_20d        = COALESCE(user_profile_20d,        %s),
+                            updated_at = now()
+                        WHERE user_id=%s
+                    """, (z64, z64, z20, user_id))
+                    conn.commit()
+
+                return UserProfile(user_id=row["user_id"], vector=base_vec)
+
+            # 不存在则插入：单列老向量 + 三路都写零
+            base_vec = _zero(self.dim)
+            cur.execute("""
+                INSERT INTO user_profiles(user_id, vector, user_semantic_64d_short, user_semantic_64d_long, user_profile_20d)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING user_id, vector
+            """, (user_id, base_vec, z64, z64, z20))
             r = cur.fetchone()
             conn.commit()
             return UserProfile(user_id=r["user_id"], vector=self._to_list(r["vector"]) or _zero(self.dim))
@@ -267,29 +316,68 @@ class PgProfileRepo:
 
     # ------- 新接口：三路向量（短/长语义 64d + 画像 20d） -------
 
+    # def get_user_vectors(self, user_id: str) -> dict:
+    #     sql = """
+    #     SELECT user_semantic_64d_short, user_semantic_64d_long, user_profile_20d
+    #     FROM user_profiles
+    #     WHERE user_id = %s
+    #     """
+    #     with self._conn() as conn, conn.cursor() as cur:
+    #         cur.execute(sql, (user_id,))
+    #         row = cur.fetchone()
+
+    #     if not row:
+    #         return {
+    #             "short": _zero(DEFAULT_DIM_SEM),
+    #             "long":  _zero(DEFAULT_DIM_SEM),
+    #             "prof20": _zero(DEFAULT_DIM_PROF),
+    #         }
+
+    #     return {
+    #         "short": self._to_list(row["user_semantic_64d_short"]) or _zero(DEFAULT_DIM_SEM),
+    #         "long":  self._to_list(row["user_semantic_64d_long"])  or _zero(DEFAULT_DIM_SEM),
+    #         "prof20": self._to_list(row["user_profile_20d"])       or _zero(DEFAULT_DIM_PROF),
+    #     }
+
     def get_user_vectors(self, user_id: str) -> dict:
-        sql = """
-        SELECT user_semantic_64d_short, user_semantic_64d_long, user_profile_20d
-        FROM user_profiles
-        WHERE user_id = %s
         """
+        统一返回 dict：{"short":[..64..], "long":[..64..], "prof20":[..20..]}。
+        - 如果行不存在：直接返回三路全 0（不落库，由首次事件或 init 接口创建）
+        - 如果行存在但某路为 NULL：顺手把库里该路补成 0 并返回 0（防止后续接口读到 NULL）
+        """
+        z64 = _zero(DEFAULT_DIM_SEM)
+        z20 = _zero(DEFAULT_DIM_PROF)
         with self._conn() as conn, conn.cursor() as cur:
-            cur.execute(sql, (user_id,))
+            cur.execute("""
+                SELECT user_semantic_64d_short, user_semantic_64d_long, user_profile_20d
+                FROM user_profiles WHERE user_id=%s
+            """, (user_id,))
             row = cur.fetchone()
 
-        if not row:
-            return {
-                "short": _zero(DEFAULT_DIM_SEM),
-                "long":  _zero(DEFAULT_DIM_SEM),
-                "prof20": _zero(DEFAULT_DIM_PROF),
-            }
+            if not row:
+                return {"short": z64, "long": z64, "prof20": z20}
 
-        return {
-            "short": self._to_list(row["user_semantic_64d_short"]) or _zero(DEFAULT_DIM_SEM),
-            "long":  self._to_list(row["user_semantic_64d_long"])  or _zero(DEFAULT_DIM_SEM),
-            "prof20": self._to_list(row["user_profile_20d"])       or _zero(DEFAULT_DIM_PROF),
-        }
+            short = self._to_list(row["user_semantic_64d_short"]) if row["user_semantic_64d_short"] is not None else None
+            long  = self._to_list(row["user_semantic_64d_long"])  if row["user_semantic_64d_long"]  is not None else None
+            prof  = self._to_list(row["user_profile_20d"])        if row["user_profile_20d"]        is not None else None
 
+            # 有 NULL 就就地补零并写回
+            if short is None or long is None or prof is None:
+                short = short or z64
+                long  = long  or z64
+                prof  = prof  or z20
+                cur.execute("""
+                    UPDATE user_profiles
+                    SET user_semantic_64d_short = %s,
+                        user_semantic_64d_long  = %s,
+                        user_profile_20d        = %s,
+                        updated_at = now()
+                    WHERE user_id=%s
+                """, (short, long, prof, user_id))
+                conn.commit()
+
+            return {"short": short, "long": long, "prof20": prof}
+    
     @staticmethod
     def _ema(u: list[float], x: list[float], a: float) -> list[float]:
         # u, x: 同维向量；a∈(0,1)

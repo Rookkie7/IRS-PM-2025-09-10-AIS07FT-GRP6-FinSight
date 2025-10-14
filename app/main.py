@@ -104,7 +104,7 @@ def _build_embedder():
         )
         return emb
     return base
-
+  
 def _build_repos(embedder_dim: int):
     backend = (settings.VECTOR_BACKEND or "").lower().strip()
 
@@ -166,13 +166,29 @@ async def lifespan(app: FastAPI):
     # 应用运行中
     yield
 
-    # —— 关闭调度器 ——
+    # —— 关闭调度器 —— 
     if sched is not None:
         try:
             sched.shutdown(wait=False)
             print("[Scheduler] shutdown ok")
         except Exception as e:
             print(f"[Scheduler] shutdown error: {e}")
+from app.api.v1.auth_router import router as auth_router
+from app.api.v1.user_router import router as user_router
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context"""
+    async with init_mongo_via_ssh():
+        # 启动阶段
+        repo = UserRepoMongo()
+        await repo.ensure_indexes()
+        print("✅ MongoDB indexes ensured at startup.")
+        # 交回控制权，开始处理请求
+        yield
+        # 关闭阶段（需要额外清理就放这里）
+        print("🛑 App shutting down... (cleanup if needed)")
+
 
 def create_app() -> FastAPI:
     """
@@ -201,7 +217,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, generic_exception_handler)
-
+    
     # 注册路由
     app.include_router(auth_router)
     app.include_router(user_router)
@@ -235,6 +251,7 @@ def create_app() -> FastAPI:
         from app.api.v1.debug_router import router as debug_router
         app.include_router(debug_router)
 
+    # 健康检查接口
     @app.get("/health")
     async def health_check():
         """
@@ -273,3 +290,4 @@ if __name__ == "__main__":
         port=8000,
         reload=True  # 开发模式下自动重载
     )
+    
