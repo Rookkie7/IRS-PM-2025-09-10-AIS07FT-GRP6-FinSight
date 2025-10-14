@@ -1,13 +1,11 @@
 from app.config import settings
 from app.adapters.db.news_repo_mongo import NewsRepoMongo
-# from app.adapters.db.user_repo_mongo import UserRepoMongo
-# from app.adapters.db.user_repo import UserRepo
+from app.adapters.db.user_repo import UserRepo
 from app.adapters.llm.openai_llm import OpenAICompatLLM
 from app.ports.storage import UserRepoPort
 from app.services.auth_service import AuthService
 from app.services.user_service import UserService
-# from config import settings
-from app.adapters.db.news_repo_mongo import NewsRepoMongo
+
 from app.adapters.vector.mongo_vector_index import MongoVectorIndex
 from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
 from app.services.news_service import NewsService
@@ -15,19 +13,20 @@ from app.services.rec_service import RecService
 from app.services.rag_service import RagService
 from app.services.forecast_service import ForecastService
 
-from config import settings
-from adapters.db.news_repo import NewsRepo
-from adapters.vector.mongo_vector_index import MongoVectorIndex
-from adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
-from services.news_service import NewsService
-from services.rec_service import RecService
-from services.rag_service import RagService
-from services.forecast_service import ForecastService
-from adapters.db.database_client import get_mongo_db, get_postgres_db
+from app.config import settings
+from app.adapters.db.news_repo import NewsRepo
+from app.adapters.vector.mongo_vector_index import MongoVectorIndex
+from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
+from app.services.news_service import NewsService
+from app.services.rec_service import RecService
+from app.services.rag_service import RagService
+from app.services.forecast_service import ForecastService
+from app.config import settings
+from app.adapters.db.database_client import get_mongo_db, get_postgres_db
 
 
-# def get_user_repo() -> UserRepo:
-#     return UserRepo()
+def get_user_repo() -> UserRepo:
+    return UserRepo()
 
 def get_auth_service():
     return AuthService(repo=get_user_repo())

@@ -26,8 +26,6 @@ class Settings(BaseSettings):
 
     MONGO_URI: str | None = Field(default=None, alias="MONGO_URI")
     MONGO_DB: str = "finsight"
-
-    REDIS_URL: str = Field(..., env="REDIS_URL")
     
     # —— 新闻抓取主源 & 抓取参数 ——
     MARKETAUX_API_KEY: str = Field("", env="MARKETAUX_API_KEY")  # 可先留空
