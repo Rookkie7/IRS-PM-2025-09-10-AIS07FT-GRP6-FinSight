@@ -2,7 +2,7 @@
 from typing import List, Tuple, Optional, Any
 from bson import ObjectId
 from app.ports.vector_index import VectorIndexPort
-from app.adapters.db.database_client import get_mongo_db, get_postgres_db
+from app.adapters.db.database_client import get_mongo_db, get_postgres_session
 from app.model.models import EmbeddingVector
 
 class MongoVectorIndex(VectorIndexPort):

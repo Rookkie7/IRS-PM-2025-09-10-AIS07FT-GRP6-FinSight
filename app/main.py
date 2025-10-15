@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 
-from app.adapters.db.database_client import init_mongo_via_ssh, init_postgres_via_ssh
+from app.adapters.db.database_client import init_mongo_via_ssh, init_postgres_sync
 from app.adapters.db.news_repo import NewsRepo
 from app.adapters.db.user_repo import UserRepo
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +24,7 @@ from app.utils.healthy import check_database_connection
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context"""
-    async with init_mongo_via_ssh(), init_postgres_via_ssh():
+    async with init_mongo_via_ssh(), init_postgres_sync():
         # 启动阶段
         user_repo = UserRepo()
         news_repo = NewsRepo()

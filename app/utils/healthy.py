@@ -2,7 +2,7 @@
 from __future__ import annotations
 import time
 from typing import Dict, Any
-from app.adapters.db.database_client import get_postgres_db, get_mongo_db  # 推荐：显式 getter
+from app.adapters.db.database_client import get_postgres_session, get_mongo_db  # 推荐：显式 getter
 
 
 async def check_database_connection() -> Dict[str, Any]:
@@ -31,7 +31,7 @@ async def check_database_connection() -> Dict[str, Any]:
 
     # 2) PostgreSQL
     try:
-        pg_db = await get_postgres_db()
+        pg_db = await get_postgres_session()
         if pg_db is None:
             raise RuntimeError("PostgreSQL connection is not initialized yet")
         t0 = time.monotonic()

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, ConfigDict, Field, EmailStr
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, List, Any
@@ -11,6 +11,10 @@ import json
 class EmbeddingVector(BaseModel):
     dim: int
     values: List[float]
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
 
 class UserBase(BaseModel):
     email: EmailStr
@@ -34,16 +38,26 @@ class UserInDB(UserBase):
     embedding: Optional[EmbeddingVector] = None
     is_active: bool = True
 
-class UserPublic(UserBase):
+class UserPublic(BaseModel):
     id: str
+    email: str
+    username: str
     created_at: datetime
-    profile: dict = {}
-    embedding: Optional[EmbeddingVector] = None
+    profile: Dict[str, Any] = {}
+    embedding: Optional[list[float]] = None  # 或 EmbeddingVector
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+class UserProfileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)  # 允许 ORM->Pydantic
+    user_id: str
+    profile_vector_20d: str = None
+    industry_preferences: List[float] = []
+    investment_preferences: List[float] = []
+    created_at: datetime
+    updated_at: datetime
 
+class RegisterResponse(BaseModel):
+    user: UserPublic
+    profile: Optional[UserProfileOut] = None
 
 class News(BaseModel):
     # id: Optional[str] = None
@@ -85,7 +99,6 @@ class UserProfile(Base):
     __tablename__ = "user_profiles"
 
     user_id = Column(String(50), primary_key=True, index=True)
-
 
     # 20维用户画像向量
     profile_vector_20d = Column(Text)

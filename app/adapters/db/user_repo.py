@@ -3,7 +3,7 @@ from datetime import datetime
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 
-from app.adapters.db.database_client import get_mongo_db, get_postgres_db
+from app.adapters.db.database_client import get_mongo_db, get_postgres_session
 from app.model.exception import UserAlreadyExistsError
 from app.model.models import UserInDB, EmbeddingVector, UserCreate
 from app.ports.storage import UserRepoPort
@@ -34,7 +34,7 @@ class UserRepo(UserRepoPort):
             is_active=doc.get("is_active", True),
         )
 
-    async def create_user(self, user: UserCreate, hashed_password: str, embedding: List[float] | None) -> str:
+    async def create_user(self, user: UserCreate, hashed_password: str) -> str:
         doc = {
             "email": user.email,
             "username": user.username,
@@ -48,7 +48,6 @@ class UserRepo(UserRepoPort):
                 "sectors": user.sectors,
                 "tickers": user.tickers,
             },
-            "embedding": {"dim": 32, "values": embedding} if embedding else None,
             "is_active": True,
         }
         try:
@@ -75,7 +74,7 @@ class UserRepo(UserRepoPort):
         doc = await self.col.find_one({"_id": oid})
         return self._to_user(doc)
 
-    async def update_profile_and_embedding(self, uid: str, profile: dict, embedding: List[float] | None) -> None:
+    async def update_profile(self, uid: str, profile: dict) -> None:
         try:
             oid = ObjectId(uid)
         except Exception:
@@ -86,6 +85,4 @@ class UserRepo(UserRepoPort):
                 "updated_at": datetime.utcnow(),
             }
         }
-        if embedding is not None:
-            update["$set"]["embedding"] = {"dim": 32, "values": embedding}
         await self.col.update_one({"_id": oid}, update)

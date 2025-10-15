@@ -1,3 +1,6 @@
+from sqlalchemy.orm.session import Session
+from fastapi import Depends
+from app.adapters.db.database_client import get_postgres_session
 from app.adapters.db.user_repo import UserRepo
 from app.adapters.llm.openai_llm import OpenAICompatLLM
 from app.ports.storage import UserRepoPort
@@ -12,27 +15,6 @@ from services.rec_service import RecService
 from services.rag_service import RagService
 from services.forecast_service import ForecastService
 from config import settings
-from adapters.db.database_client import get_mongo_db, get_postgres_db
-
-
-def get_user_repo() -> UserRepo:
-    return UserRepo()
-
-def get_auth_service():
-    return AuthService(repo=get_user_repo())
-
-def get_user_service():
-    return UserService(repo=get_user_repo(), embedder=get_embedder(), dim=32)
-
-def get_llm():
-    if settings.LLM_PROVIDER == "deepseek_openai":
-        return OpenAICompatLLM(
-            base_url=settings.LLM_OPENAI_BASE,
-            api_key=settings.LLM_OPENAI_API_KEY,
-            model=settings.LLM_MODEL,
-        )
-        # fallback
-    return OpenAICompatLLM()
 
 def get_query_embedder():
     # You can also use OpenAI Embeddings; here we use the local SB model
@@ -44,6 +26,28 @@ def get_vector_index():
 
 def get_embedder():
     return LocalEmbeddingProvider(model_name="all-MiniLM-L6-v2")  # 或 OpenAIEmbeddingProvider()
+
+def get_user_repo() -> UserRepo:
+    return UserRepo()
+
+def get_auth_service():
+    return AuthService(repo=get_user_repo())
+
+def get_user_service(
+        db: Session = Depends(get_postgres_session),
+        embedder = Depends(get_embedder),):
+    return UserService(db=db, repo=get_user_repo(), embedder=embedder, dim=32)
+
+def get_llm():
+    if settings.LLM_PROVIDER == "deepseek_openai":
+        return OpenAICompatLLM(
+            base_url=settings.LLM_OPENAI_BASE,
+            api_key=settings.LLM_OPENAI_API_KEY,
+            model=settings.LLM_MODEL,
+        )
+        # fallback
+    return OpenAICompatLLM()
+
 
 def get_news_index():
     return MongoVectorIndex(collection_name="news")
