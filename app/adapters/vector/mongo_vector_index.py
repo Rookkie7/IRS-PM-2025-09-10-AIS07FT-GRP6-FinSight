@@ -2,7 +2,7 @@
 from typing import List, Tuple, Optional, Any
 from bson import ObjectId
 from app.ports.vector_index import VectorIndexPort
-from app.adapters.db.mongo_client import db
+from app.adapters.db.database_client import get_mongo_db, get_postgres_session
 from app.model.models import EmbeddingVector
 
 class MongoVectorIndex(VectorIndexPort):
@@ -18,7 +18,7 @@ class MongoVectorIndex(VectorIndexPort):
                  collection_name: str,
                  index_name: str = "embedding_idx",
                  path: str = "embedding.values"):
-        self.col = db[collection_name]
+        self.col = get_mongo_db()[collection_name]
         self.index_name = index_name
         self.path = path
 

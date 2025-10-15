@@ -6,14 +6,14 @@ from app.adapters.rag.retriever import Retriever
 from app.adapters.rag.ranker import SimpleRanker
 from app.adapters.rag.prompt_templates import build_finance_prompt
 from app.ports.vector_index import VectorIndexPort
-from app.adapters.db.news_repo_mongo import NewsRepoMongo
+from app.adapters.db.news_repo import NewsRepo
 from app.ports.embedding import EmbeddingProviderPort
 
 class RagService:
     def __init__(
         self,
         index: VectorIndexPort,
-        news_repo: NewsRepoMongo,
+        news_repo: NewsRepo,
         query_embedder: EmbeddingProviderPort,
         llm: OpenAICompatLLM,
         dim: int = 32,

@@ -1,22 +1,20 @@
+from sqlalchemy.orm.session import Session
+from fastapi import Depends
+from app.adapters.db.database_client import get_postgres_session
+from app.adapters.db.user_repo import UserRepo
 from app.adapters.llm.openai_llm import OpenAICompatLLM
+from app.ports.storage import UserRepoPort
+from app.services.auth_service import AuthService
+from app.services.user_service import UserService
 from config import settings
-from adapters.db.news_repo_mongo import NewsRepoMongo
+from adapters.db.news_repo import NewsRepo
 from adapters.vector.mongo_vector_index import MongoVectorIndex
 from adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
 from services.news_service import NewsService
 from services.rec_service import RecService
 from services.rag_service import RagService
 from services.forecast_service import ForecastService
-
-def get_llm():
-    if settings.LLM_PROVIDER == "deepseek_openai":
-        return OpenAICompatLLM(
-            base_url=settings.LLM_OPENAI_BASE,
-            api_key=settings.LLM_OPENAI_API_KEY,
-            model=settings.LLM_MODEL,
-        )
-        # fallback
-    return OpenAICompatLLM()
+from config import settings
 
 def get_query_embedder():
     # You can also use OpenAI Embeddings; here we use the local SB model
@@ -29,12 +27,34 @@ def get_vector_index():
 def get_embedder():
     return LocalEmbeddingProvider(model_name="all-MiniLM-L6-v2")  # 或 OpenAIEmbeddingProvider()
 
+def get_user_repo() -> UserRepo:
+    return UserRepo()
+
+def get_auth_service():
+    return AuthService(repo=get_user_repo())
+
+def get_user_service(
+        db: Session = Depends(get_postgres_session),
+        embedder = Depends(get_embedder),):
+    return UserService(db=db, repo=get_user_repo(), embedder=embedder, dim=32)
+
+def get_llm():
+    if settings.LLM_PROVIDER == "deepseek_openai":
+        return OpenAICompatLLM(
+            base_url=settings.LLM_OPENAI_BASE,
+            api_key=settings.LLM_OPENAI_API_KEY,
+            model=settings.LLM_MODEL,
+        )
+        # fallback
+    return OpenAICompatLLM()
+
+
 def get_news_index():
     return MongoVectorIndex(collection_name="news")
 
 def get_news_service():
     return NewsService(
-        repo=NewsRepoMongo(),
+        repo=NewsRepo(),
         embedder=get_embedder(),
         index=get_vector_index(),
         dim=settings.DEFAULT_VECTOR_DIM
@@ -46,7 +66,7 @@ def get_rec_service():
 def get_rag_service():
     return RagService(
         index=get_news_index(),
-        news_repo=NewsRepoMongo(),
+        news_repo=NewsRepo(),
         query_embedder=get_query_embedder(),
         llm=get_llm(),
         dim=32,
