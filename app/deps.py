@@ -1,30 +1,60 @@
-from __future__ import annotations
-
+from sqlalchemy.orm.session import Session
+from fastapi import Depends
+from app.adapters.db.database_client import get_postgres_session
+from app.adapters.db.user_repo import UserRepo
+from app.adapters.llm.openai_llm import OpenAICompatLLM
+from app.ports.storage import UserRepoPort
+from app.services.auth_service import AuthService
+from app.services.user_service import UserService
 from config import settings
-from adapters.db.news_repo_mongo import NewsRepoMongo
+from adapters.db.news_repo import NewsRepo
 from adapters.vector.mongo_vector_index import MongoVectorIndex
 from adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
 from services.news_service import NewsService
 from services.rec_service import RecService
 from services.rag_service import RagService
-from app.services.forecast_service import ForecastService, PriceProviderPort, ForecastConfig
-from app.forecasters.arima_forecaster import ArimaForecaster
-# from app.forecasters.prophet_forecaster import ProphetForecaster
-# from app.forecasters.lgbm_forecaster import LgbmForecaster
-# from app.forecasters.lstm_forecaster import LstmForecaster
+from services.forecast_service import ForecastService
+from config import settings
 
-from typing import List
-import math
+def get_query_embedder():
+    # You can also use OpenAI Embeddings; here we use the local SB model
+    return LocalEmbeddingProvider()
+
 def get_vector_index():
-    # 可根据 settings.VECTOR_BACKEND 切换到 pgvector_index.PgVectorIndex()
+    # Can be switched to pgvector_index.PgVectorIndex() according to settings.VECTOR_BACKEND
     return MongoVectorIndex(collection_name="news")  # 你也可以为 stocks 建独立索引/集合
 
 def get_embedder():
-    return LocalEmbeddingProvider()  # 或 OpenAIEmbeddingProvider()
+    return LocalEmbeddingProvider(model_name="all-MiniLM-L6-v2")  # 或 OpenAIEmbeddingProvider()
+
+def get_user_repo() -> UserRepo:
+    return UserRepo()
+
+def get_auth_service():
+    return AuthService(repo=get_user_repo())
+
+def get_user_service(
+        db: Session = Depends(get_postgres_session),
+        embedder = Depends(get_embedder),):
+    return UserService(db=db, repo=get_user_repo(), embedder=embedder, dim=32)
+
+def get_llm():
+    if settings.LLM_PROVIDER == "deepseek_openai":
+        return OpenAICompatLLM(
+            base_url=settings.LLM_OPENAI_BASE,
+            api_key=settings.LLM_OPENAI_API_KEY,
+            model=settings.LLM_MODEL,
+        )
+        # fallback
+    return OpenAICompatLLM()
+
+
+def get_news_index():
+    return MongoVectorIndex(collection_name="news")
 
 def get_news_service():
     return NewsService(
-        repo=NewsRepoMongo(),
+        repo=NewsRepo(),
         embedder=get_embedder(),
         index=get_vector_index(),
         dim=settings.DEFAULT_VECTOR_DIM
@@ -34,46 +64,13 @@ def get_rec_service():
     return RecService(vector_index=get_vector_index(), dim=settings.DEFAULT_VECTOR_DIM)
 
 def get_rag_service():
-    return RagService(index=get_vector_index(), llm=None, dim=settings.DEFAULT_VECTOR_DIM)
+    return RagService(
+        index=get_news_index(),
+        news_repo=NewsRepo(),
+        query_embedder=get_query_embedder(),
+        llm=get_llm(),
+        dim=32,
+    )
 
-
-
-# ========= FORECAST SERVICE ========================
-class CsvPriceProvider(PriceProviderPort):
-    async def get_recent_closes(self, ticker: str, lookback_days: int = 252):
-        # TODO: 替换为你项目真实的数据通道 (Mongo/CSV/yfinance/…)
-        # import pandas as pd
-        # import pathlib
-        # path = pathlib.Path("data")/f"{ticker}.csv"  # 假设有 data/AAPL.csv
-        # df = pd.read_csv(path)  # 必须包含按日期升序的 Close 列
-        # closes = df["Close"].astype(float).tail(lookback_days).tolist()
-        # return closes
-        return [100 + i * 0.12 for i in range(260)]
-
-class MockPriceProvider(PriceProviderPort):
-    """示例：生成一段轻微上升+小噪声的价格序列。请替换成你的真实数据源。"""
-    async def get_recent_closes(self, ticker: str, lookback_days: int = 252) -> List[float]:
-        base = 100.0
-        series: List[float] = []
-        drift = 0.0008
-        vol = 0.01
-        import random
-        for i in range(lookback_days + 10):
-            shock = random.gauss(0, vol)
-            base = max(1.0, base * (1.0 + drift + shock))
-            series.append(base)
-        return series
-
-def get_forecast_service() -> ForecastService:
-    provider = MockPriceProvider()
-    provider = CsvPriceProvider()
-    cfg = ForecastConfig(lookback_days=252, ma_window=20)
-
-    forecasters = {
-        "arima": ArimaForecaster(order=(1, 1, 1)),
-        # "prophet": ProphetForecaster(),
-        # "lgbm": LgbmForecaster(booster=loaded_booster),
-        # "lstm": LstmForecaster(model=loaded_torch_model),
-    }
-
-    return ForecastService(price_provider=provider, cfg=cfg, forecasters=forecasters)
+def get_forecast_service():
+    return ForecastService()
