@@ -1,0 +1,66 @@
+# ----------------------------
+# Python & FastAPI 项目专用
+# ----------------------------
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# Python 缓存与编译文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 构建输出
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Jupyter Notebook 临时文件
+.ipynb_checkpoints/
+
+# 单元测试与覆盖率
+.coverage
+.tox/
+.nox/
+.pytest_cache/
+coverage.xml
+htmlcov/
+
+# FastAPI / Uvicorn 日志
+*.log
+*.sqlite3
+*.db
+
+# 环境变量文件（包含敏感信息）
+.env
+.env.*
+!.env.example
+
+# IDE / 编辑器文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS 系统文件
+.DS_Store
+
+# 数据缓存 / 临时文件
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Node / Frontend 依赖（如果以后有前端）
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+
+# Docker 相关
+docker-compose.override.yml
+*.pid
+
+

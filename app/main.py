@@ -6,6 +6,8 @@ from app.api.v1.news_router import router as news_router
 from app.api.v1.rec_router import router as rec_router
 from app.api.v1.rag_router import router as rag_router
 from app.api.v1.forecast_router import router as forecast_router
+from fastapi.middleware.cors import CORSMiddleware
+
 
 def create_app() -> FastAPI:
     """
@@ -22,7 +24,13 @@ def create_app() -> FastAPI:
     app.include_router(rec_router)
     app.include_router(rag_router)
     app.include_router(forecast_router)
-
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     # 健康检查接口
     @app.get("/health")
     async def health():

@@ -35,10 +35,24 @@ class Recommendation(BaseModel):
     # generated_at: datetime
     ...
 
+
+# STOCK PREDICTION
+
+class ForecastPoint(BaseModel):
+    horizon_days: int = Field(..., description="The day of the prediction")
+    predicted: float = Field(..., description="Predicted value")
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Confidence level 0-1")
+
 class ForecastResult(BaseModel):
     # ticker: str
     # horizon_days: int
     # method: str
     # yhat: List[float]
     # generated_at: datetime
-    ...
+    
+    ticker: str
+    method: str = "naive-drift"      
+    generated_at: datetime
+    current_price: float
+    predictions: List[ForecastPoint]
+    
