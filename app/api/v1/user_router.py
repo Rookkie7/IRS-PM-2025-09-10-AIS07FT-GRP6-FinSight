@@ -40,35 +40,35 @@ async def update_me(payload: ProfileUpdateIn, auth: AuthService = Depends(get_au
     await usvc.update_profile_and_embed(u, profile)
     return {"ok": True}
 
-@router.post("/profile/init")
-async def init_user_profile(
-        user_id: str = Query(..., description="用户ID"),
-        reset: bool = Query(False, description="是否重置现有用户画像"),
-        postgres_db: Session = Depends(get_postgres_session),
-):
-    """
-    初始化20维用户画像
-    """
-    try:
-        user_service = UserService(postgres_db)
-        profile = user_service.init_user_profile(user_id, reset)
-
-        if not profile:
-            raise HTTPException(status_code=500, detail="用户画像初始化失败")
-
-        vector_20d = profile.get_profile_vector_20d()
-
-        return {
-            "ok": True,
-            "user_id": user_id,
-            "message": "用户画像重置成功" if reset else "用户画像初始化成功",
-            "vector_dim": len(vector_20d),
-            "industry_preferences": profile.industry_preferences,
-            "investment_preferences": profile.investment_preferences,
-            "created_at": profile.created_at.isoformat()
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"用户画像初始化失败: {str(e)}")
+#旧方法直接初始化用户画像，新方法在authrouter中，把pg中的用户向量和mongodb中的用户信息一起注册
+# @router.post("/profile/init")
+# async def init_user_profile(
+#         user_id: str = Query(..., description="用户ID"),
+#         reset: bool = Query(False, description="是否重置现有用户画像"),
+#         user_service: UserService = Depends(get_user_service),
+# ):
+#     """
+#     初始化20维用户画像
+#     """
+#     try:
+#         profile = user_service.init_user_profile(user_id, reset)
+#
+#         if not profile:
+#             raise HTTPException(status_code=500, detail="用户画像初始化失败")
+#
+#         vector_20d = profile.get_profile_vector_20d()
+#
+#         return {
+#             "ok": True,
+#             "user_id": user_id,
+#             "message": "用户画像重置成功" if reset else "用户画像初始化成功",
+#             "vector_dim": len(vector_20d),
+#             "industry_preferences": profile.industry_preferences,
+#             "investment_preferences": profile.investment_preferences,
+#             "created_at": profile.created_at.isoformat()
+#         }
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"用户画像初始化失败: {str(e)}")
 
 
 @router.post("/profile/custom")
@@ -76,14 +76,12 @@ async def create_custom_user_profile(
         user_id: str = Query(..., description="用户ID"),
         industry_preferences: str = Query(..., description="11维行业偏好，逗号分隔"),
         investment_preferences: str = Query(..., description="9维投资偏好，逗号分隔"),
-        postgres_db: Session = Depends(get_postgres_session),
+        user_service: UserService = Depends(get_user_service),
 ):
     """
     创建自定义用户画像
     """
     try:
-        user_service = UserService(postgres_db)
-
         # 解析偏好数据
         industry_prefs = [float(x.strip()) for x in industry_preferences.split(",")]
         investment_prefs = [float(x.strip()) for x in investment_preferences.split(",")]
@@ -116,13 +114,12 @@ async def create_custom_user_profile(
 @router.get("/profile/detail")
 async def get_user_profile_detail(
         user_id: str = Query(..., description="用户ID"),
-        postgres_db: Session = Depends(get_postgres_session),
+        user_service: UserService = Depends(get_user_service),
 ):
     """
     获取用户画像详细信息
     """
     try:
-        user_service = UserService(postgres_db)
         profile_details = user_service.get_profile_details(user_id)
 
         if not profile_details:
@@ -141,13 +138,12 @@ async def get_user_profile_detail(
 @router.get("/vector/{user_id}")
 async def get_user_vector(
         user_id: str,
-        postgres_db: Session = Depends(get_postgres_session),
+        user_service: UserService = Depends(get_user_service),
 ):
     """
     获取用户20维向量
     """
     try:
-        user_service = UserService(postgres_db)
         user_vector = user_service.get_user_vector(user_id)
 
         if user_vector is None:
@@ -172,21 +168,13 @@ async def update_user_behavior(
         stock_symbol: str = Query(..., description="股票代码"),
         stock_sector: str = Query(None, description="股票行业，如果不提供尝试从MongoDB获取"),
         duration: float = Query(0, description="停留时间(秒)"),
-        postgres_db: Session = Depends(get_postgres_session),
-        mongo_db: Database = Depends(get_mongo_db)
+        mongo_db: Database = Depends(get_mongo_db),
+        user_service: UserService = Depends(get_user_service),
 ):
     """
     更新用户行为数据，用于动态调整用户偏好
     """
     try:
-        user_service = UserService(postgres_db)
-
-        # 如果没有提供行业，尝试从MongoDB获取
-        if not stock_sector:
-            collection = mongo_db["stock_raw_data"]
-            stock_data = collection.find_one({"symbol": stock_symbol.upper()})
-            if stock_data and 'basic_info' in stock_data:
-                stock_sector = stock_data['basic_info'].get('sector')
 
         behavior_data = {
             "type": behavior_type,
@@ -195,7 +183,8 @@ async def update_user_behavior(
             "duration": duration
         }
 
-        success = user_service.update_user_behavior(user_id, behavior_data)
+        #使用异步版本
+        success = await user_service.update_user_behavior(user_id, behavior_data, mongo_db)
 
         if not success:
             raise HTTPException(status_code=500, detail="用户行为更新失败")
@@ -208,7 +197,7 @@ async def update_user_behavior(
             "user_id": user_id,
             "behavior_type": behavior_type,
             "stock_symbol": stock_symbol,
-            "stock_sector": stock_sector,
+            # "stock_sector": stock_sector, 需要让他更新
             "message": "用户行为数据更新成功",
             "updated_preferences": {
                 "industry_preferences": profile_details["industry_preferences"],
@@ -224,13 +213,14 @@ async def update_user_preferences(
         user_id: str = Query(..., description="用户ID"),
         industry_preferences: str = Query(None, description="11维行业偏好，逗号分隔"),
         investment_preferences: str = Query(None, description="9维投资偏好，逗号分隔"),
-        postgres_db: Session = Depends(get_postgres_session),
+        # postgres_db: Session = Depends(get_postgres_session),
+        user_service: UserService = Depends(get_user_service),
 ):
     """
     直接更新用户偏好
     """
     try:
-        user_service = UserService(postgres_db)
+        # user_service = UserService(postgres_db)
 
         preferences = {}
 
@@ -274,13 +264,14 @@ async def update_user_preferences(
 @router.get("/preferences/explain")
 async def explain_user_preferences(
         user_id: str = Query(..., description="用户ID"),
-        postgres_db: Session = Depends(get_postgres_session),
+        # postgres_db: Session = Depends(get_postgres_session),
+        user_service: UserService = Depends(get_user_service),
 ):
     """
     解释用户偏好含义
     """
     try:
-        user_service = UserService(postgres_db)
+        # user_service = UserService(postgres_db)
         profile_details = user_service.get_profile_details(user_id)
 
         if not profile_details:

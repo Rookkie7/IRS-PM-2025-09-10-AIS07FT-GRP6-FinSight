@@ -15,7 +15,7 @@ from app.model.models import StockVector, StockRawData
 
 logger = logging.getLogger(__name__)
 
-#获取标普500中的前100市值symbol列表
+# 获取标普500中的前100市值symbol列表
 sp500_top100 = ['NVDA', 'MSFT', 'AAPL', 'GOOGL', 'GOOG', 'AMZN', 'META', 'AVGO', 'TSLA', 'ORCL', 'JPM', 'WMT', 'LLY',
                 'V', 'NFLX', 'MA', 'XOM', 'JNJ', 'PLTR', 'COST', 'ABBV', 'HD', 'BAC', 'PG', 'AMD', 'UNH', 'GE', 'CVX',
                 'KO', 'CSCO', 'IBM', 'TMUS', 'PM', 'WFC', 'MS', 'GS', 'ABT', 'CAT', 'CRM', 'AXP', 'MRK', 'LIN', 'MCD',
@@ -32,10 +32,10 @@ class StockService:
     def __init__(self, postgres_db: Session, mongo_db: Database):
         self.postgres_db = postgres_db
         self.mongo_db = mongo_db
-        self.stock_raw_collection = mongo_db["stock_raw_data"]
+        self.stock_raw_collection = mongo_db["stocks"]
         self.sector_list = SECTOR_LIST
 
-    def fetch_stock_data(self, symbols: List[str]) -> Dict[str, StockRawData]:
+    async def fetch_stock_data(self, symbols: List[str]) -> Dict[str, StockRawData]:
         """从yfinance获取股票数据并存入MongoDB"""
         stock_data_dict = {}
 
@@ -56,13 +56,12 @@ class StockService:
                 stock_data.historical_data = self._fetch_historical_data(ticker)
 
                 # 4. 获取新闻和描述
-                # stock_data.news = self._fetch_news_data(ticker)
                 stock_data.descriptions = self._fetch_descriptions(ticker)
 
                 stock_data_dict[symbol] = stock_data
 
                 # 存入MongoDB
-                self._save_to_mongodb(stock_data)
+                await self._save_to_mongodb(stock_data)
 
                 logger.info(f"成功获取 {symbol} 的数据")
 
@@ -175,10 +174,10 @@ class StockService:
         except:
             return {}
 
-    def _save_to_mongodb(self, stock_data: StockRawData):
+    async def _save_to_mongodb(self, stock_data: StockRawData):
         """保存到MongoDB"""
         try:
-            self.stock_raw_collection.update_one(
+            await self.stock_raw_collection.update_one(
                 {'symbol': stock_data.symbol},
                 {'$set': stock_data.to_dict()},
                 upsert=True
@@ -186,10 +185,11 @@ class StockService:
         except Exception as e:
             logger.error(f"保存到MongoDB失败 {stock_data.symbol}: {e}")
 
-    def compute_stock_vector_20d(self, symbol: str) -> np.ndarray:
+    async def compute_stock_vector_20d(self, symbol: str) -> np.ndarray:
         """计算20维股票向量"""
         try:
-            raw_data = self.stock_raw_collection.find_one({'symbol': symbol})
+            # 使用 await 进行异步查询
+            raw_data = await self.stock_raw_collection.find_one({'symbol': symbol})
             if not raw_data:
                 logger.warning(f"未找到 {symbol} 的原始数据")
                 return self._create_default_vector_20d()
@@ -208,7 +208,7 @@ class StockService:
             norm = np.linalg.norm(vector_20d)
             if norm > 0:
                 vector_20d = vector_20d / norm
-
+            logger.info(f"stock_vector: {vector_20d}")
             return vector_20d
 
         except Exception as e:
@@ -324,7 +324,7 @@ class StockService:
 
         return vector
 
-    def update_stock_vectors(self, symbols: List[str]) -> Dict[str, Any]:
+    async def update_stock_vectors(self, symbols: List[str]) -> Dict[str, Any]:
         """更新股票向量（使用20维向量）"""
         results = {
             "updated": 0,
@@ -334,16 +334,16 @@ class StockService:
 
         for symbol in symbols:
             try:
-                # 计算20维向量
-                vector_20d = self.compute_stock_vector_20d(symbol)
-
-                # 从MongoDB获取基本信息
-                raw_data = self.stock_raw_collection.find_one({'symbol': symbol})
+                # 计算20维向量 - 使用 await
+                vector_20d = await self.compute_stock_vector_20d(symbol)
+                # logger.info(f"vector_20d: {vector_20d}")
+                # 从MongoDB获取基本信息 - 使用 await
+                raw_data = await self.stock_raw_collection.find_one({'symbol': symbol})
                 basic_info = raw_data.get('basic_info', {}) if raw_data else {}
 
                 # 更新或创建PostgreSQL记录
                 existing = self.postgres_db.query(StockVector).filter(StockVector.symbol == symbol).first()
-
+                # logger.info(f"existing: {existing}")
                 if existing:
                     existing.set_vector_20d(vector_20d)
                     existing.name = basic_info.get('name', symbol)
@@ -366,6 +366,8 @@ class StockService:
 
             except Exception as e:
                 logger.error(f"更新 {symbol} 向量失败: {e}")
+                import traceback
+                logger.error(f"详细错误: {traceback.format_exc()}")
                 results["failed"].append(symbol)
 
         self.postgres_db.commit()

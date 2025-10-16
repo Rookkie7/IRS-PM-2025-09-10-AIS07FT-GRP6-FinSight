@@ -190,7 +190,7 @@ class UserService:
             "updated_at": profile.updated_at.isoformat()
         }
 
-    def update_user_behavior(self, user_id: str, behavior_data: Dict[str, Any]):
+    async def update_user_behavior(self, user_id: str, behavior_data: Dict[str, Any],mongo_db = None):
         """
         更新用户行为数据（简化版，基于股票交互）
         """
@@ -203,8 +203,16 @@ class UserService:
             stock_symbol = behavior_data.get('stock_symbol')
             stock_sector = behavior_data.get('stock_sector')
 
+            # 如果没有提供行业，尝试从MongoDB获取（异步）
+            if not stock_sector and mongo_db is not None and stock_symbol:
+                collection = mongo_db["stocks"]
+                stock_data = await collection.find_one({"symbol": stock_symbol.upper()})
+                if stock_data and 'basic_info' in stock_data:
+                    stock_sector = stock_data['basic_info'].get('sector')
+                    behavior_data['stock_sector'] = stock_sector
+
             # 基于用户行为微调偏好
-            if stock_sector and stock_sector in self.sector_list:
+            if stock_sector in self.sector_list:
                 self._adjust_sector_preference(profile, stock_sector, behavior_type)
 
             # 重新构建向量
@@ -242,6 +250,7 @@ class UserService:
         except ValueError:
             pass  # 行业不在预定义列表中
 
+#这里这个方法在userrepo里没实现啊，用不了
     async def update_profile_and_embed(self, user: UserInDB, profile: dict) -> None:
         text = "\n".join([f"{k}: {v}" for k, v in profile.items() if v])
         vec = (await self.embedder.embed([text or user.username], dim=self.dim))[0]
