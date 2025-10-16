@@ -1,41 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Header } from './components/Layout/Header';
 import { TabNavigation } from './components/Layout/TabNavigation';
 import { NewsTab } from './components/News/NewsTab';
 import { RecommendationsTab } from './components/Recommendations/RecommendationsTab';
 import { AnalystTab } from './components/Analyst/AnalystTab';
 import { PredictTab } from './components/Predict/PredictTab';
+import { useAuth } from './components/Auth/AuthContext.tsx';
 import { LoginPage } from './components/Auth/LoginPage';
 import { RegisterPage } from './components/Auth/RegisterPage';
 
+type TabKey = 'news' | 'recommendations' | 'analyst' | 'predict';
+
 function App() {
-    const [activeTab, setActiveTab] = useState('news');
+    const [activeTab, setActiveTab] = useState<TabKey>('news');
     const [authView, setAuthView] = useState<'login' | 'register'>('login');
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [, setUser] = useState<unknown>(null);
 
-    useEffect(() => {
-        const token = localStorage.getItem('auth_token');
-        const userData = localStorage.getItem('user_data');
-        if (token && userData) {
-            setIsAuthenticated(true);
-            setUser(JSON.parse(userData));
-        }
-    }, []);
-
-    const handleLoginSuccess = (token: string, userData: any) => {
-        localStorage.setItem('auth_token', token);
-        localStorage.setItem('user_data', JSON.stringify(userData));
-        setIsAuthenticated(true);
-        setUser(userData);
-    };
-
-    const handleRegisterSuccess = (token: string, userData: any) => {
-        localStorage.setItem('auth_token', token);
-        localStorage.setItem('user_data', JSON.stringify(userData));
-        setIsAuthenticated(true);
-        setUser(userData);
-    };
+    // 关键：用全局 AuthContext 的 token/user 判断是否已登录
+    const { token } = useAuth();
 
     const renderActiveTab = () => {
         switch (activeTab) {
@@ -52,30 +33,21 @@ function App() {
         }
     };
 
-    if (!isAuthenticated) {
-        if (authView === 'login') {
-            return (
-                <LoginPage
-                    onSwitchToRegister={() => setAuthView('register')}
-                    onLoginSuccess={handleLoginSuccess}
-                />
-            );
-        }
-        return (
-            <RegisterPage
-                onSwitchToLogin={() => setAuthView('login')}
-                onRegisterSuccess={handleRegisterSuccess}
-            />
+    // 未登录：显示登录/注册（不再传 onLoginSuccess/onRegisterSuccess）
+    if (!token) {
+        return authView === 'login' ? (
+            <LoginPage onSwitchToRegister={() => setAuthView('register')} />
+        ) : (
+            <RegisterPage onSwitchToLogin={() => setAuthView('login')} />
         );
     }
 
+    // 已登录：显示主应用
     return (
         <div className="min-h-screen bg-gray-50">
             <Header />
             <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
-            <main className="min-h-screen">
-                {renderActiveTab()}
-            </main>
+            <main className="min-h-screen">{renderActiveTab()}</main>
         </div>
     );
 }

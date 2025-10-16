@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import { LogIn } from 'lucide-react';
+import { useAuth } from './AuthContext'; // ← 路径按你的项目实际调整
+// 如需路由跳转可解开：
+// import { useNavigate } from 'react-router-dom';
 
 interface LoginPageProps {
     onSwitchToRegister: () => void;
-    onLoginSuccess: (token: string, user: any) => void;
 }
 
-export function LoginPage({ onSwitchToRegister, onLoginSuccess }: LoginPageProps) {
+export function LoginPage({ onSwitchToRegister }: LoginPageProps) {
+    const { setToken, setUser } = useAuth();
+    // const navigate = useNavigate();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -14,29 +18,62 @@ export function LoginPage({ onSwitchToRegister, onLoginSuccess }: LoginPageProps
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (loading) return;
         setError('');
         setLoading(true);
 
         try {
-            const apiUrl = `${import.meta.env.VITE_BACKEND_BASE_URL}/auth/login`;
+            const base = import.meta.env.VITE_BACKEND_BASE_URL as string | undefined;
+            if (!base) throw new Error('VITE_BACKEND_BASE_URL is not set in .env(.local)');
 
-            const response = await fetch(apiUrl, {
+            // 1) 登录：拿 access_token
+            const loginUrl = new URL('/auth/login', base).toString();
+            const loginResp = await fetch(loginUrl, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
+                // 如果后端需要 {username, password} 就改字段名
                 body: JSON.stringify({ email, password }),
             });
 
-            const data = await response.json();
+            const loginText = await loginResp.text();
+            let loginData: any = {};
+            try { loginData = loginText ? JSON.parse(loginText) : {}; } catch { /* ignore */ }
 
-            if (!response.ok) {
-                throw new Error(data.error || 'Login failed');
+            if (!loginResp.ok) {
+                const msg = loginData?.error || loginData?.message || `Login failed (HTTP ${loginResp.status})`;
+                throw new Error(msg);
             }
 
-            onLoginSuccess(data.token, data.user);
+            const token: string | null =
+                loginData?.access_token || loginData?.token || loginData?.jwt || null;
+
+            if (!token) throw new Error('No access token in response');
+
+            // 先保存 token（让后续请求能带鉴权）
+            setToken(token);
+
+            // 2) 用 token 拉取当前用户
+            const meUrl = new URL('/users/me', base).toString();
+            const meResp = await fetch(meUrl, {
+                headers: { Authorization: `Bearer ${token}` }, // token_type=bearer
+            });
+
+            if (!meResp.ok) {
+                // 如果 /users/me 失败，仍允许登录，但给出提示
+                console.warn('Fetching /users/me failed:', meResp.status);
+            }
+
+            let meData: any = null;
+            try { meData = await meResp.json(); } catch { /* ignore */ }
+            console.log(meData);
+            // 3) 写入用户（没有就给占位，防止依赖 user 的地方炸）
+            setUser(meData ?? { id: 'me', username: email.split('@')[0] || 'User' });
+
+            // 如需路由跳转：
+            // navigate('/app', { replace: true });
+            // 如果用条件渲染，App.tsx 里看到 token/user 更新就会切到主界面
         } catch (err: any) {
-            setError(err.message || 'An error occurred during login');
+            setError(err?.message || 'An error occurred during login');
         } finally {
             setLoading(false);
         }
@@ -71,6 +108,7 @@ export function LoginPage({ onSwitchToRegister, onLoginSuccess }: LoginPageProps
                             required
                             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="your@email.com"
+                            autoComplete="email"
                         />
                     </div>
 
@@ -85,6 +123,7 @@ export function LoginPage({ onSwitchToRegister, onLoginSuccess }: LoginPageProps
                             required
                             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             placeholder="••••••••"
+                            autoComplete="current-password"
                         />
                     </div>
 

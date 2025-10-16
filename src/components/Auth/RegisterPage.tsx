@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UserPlus } from 'lucide-react';
+import { useAuth} from "./AuthContext.tsx";
 
 const SECTOR_LIST = [
     'Utilities', 'Technology', 'Consumer Defensive', 'Healthcare',
@@ -20,10 +21,11 @@ const MOCK_TICKERS = [
 
 interface RegisterPageProps {
     onSwitchToLogin: () => void;
-    onRegisterSuccess: (token: string, user: any) => void;
+    // onRegisterSuccess: (token: string, user: any) => void;
 }
 
-export function RegisterPage({ onSwitchToLogin, onRegisterSuccess }: RegisterPageProps) {
+export function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
+    const {setToken, setUser} = useAuth();
     const [formData, setFormData] = useState({
         email: '',
         username: '',
@@ -92,7 +94,9 @@ export function RegisterPage({ onSwitchToLogin, onRegisterSuccess }: RegisterPag
                 throw new Error(data.error || 'Registration failed');
             }
 
-            onRegisterSuccess(data.token, data.user);
+            setToken(data.token);
+            setUser(data.user);
+            // onRegisterSuccess(data.token, data.user);
         } catch (err: any) {
             setError(err.message || 'An error occurred during registration');
         } finally {
