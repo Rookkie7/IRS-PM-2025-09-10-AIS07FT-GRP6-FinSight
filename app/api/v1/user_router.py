@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from requests.sessions import Session
-
+from fastapi.security import OAuth2PasswordBearer
 from app.model.models import UserPublic
 from app.services.auth_service import AuthService
 from app.deps import get_auth_service, get_user_service
@@ -12,6 +12,8 @@ from app.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
 class ProfileUpdateIn(BaseModel):
     full_name: str | None = None
     bio: str | None = None
@@ -20,8 +22,10 @@ class ProfileUpdateIn(BaseModel):
     tickers: list[str] = []
 
 @router.get("/me", response_model=UserPublic)
-async def me(auth: AuthService = Depends(get_auth_service)):
-    u = await auth.get_current_user()
+async def me(
+        token: str = Depends(oauth2_scheme),
+        auth: AuthService = Depends(get_auth_service)):
+    u = await auth.get_current_user(token)
     return UserPublic(
         id=u.id, email=u.email, username=u.username,
         created_at=u.created_at, profile=u.profile, embedding=u.embedding
