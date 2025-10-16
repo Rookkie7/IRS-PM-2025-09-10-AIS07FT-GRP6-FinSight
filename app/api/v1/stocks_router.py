@@ -74,11 +74,11 @@ async def get_stock_recommendations(
         postgres_db: Session = Depends(get_postgres_session),
         mongo_db: Database = Depends(get_mongo_db),
         user_service: UserService = Depends(get_user_service),
+        diversity_factor: float = Query(0.1, ge=0, le=1, description="多样性因子")
 ):
     """
     获取个性化股票推荐（基于20维向量）
     """
-
 
     try:
         stock_service = StockService(postgres_db, mongo_db)
@@ -95,7 +95,7 @@ async def get_stock_recommendations(
         user_vector = user_profile.get_profile_vector_20d()
 
         # 获取推荐
-        recommendations = stock_service.recommend_stocks(user_vector, top_k)
+        recommendations = stock_service.recommend_stocks(user_vector, top_k, diversity_factor)
 
         return {
             "ok": True,

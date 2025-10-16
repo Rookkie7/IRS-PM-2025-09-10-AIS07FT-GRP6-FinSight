@@ -7,7 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.orm import Session
 from pymongo.database import Database
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import re
 from datetime import datetime
 
@@ -373,7 +373,7 @@ class StockService:
         self.postgres_db.commit()
         return results
 
-    def recommend_stocks(self, user_vector: np.ndarray, top_k: int = 5) -> List[Dict]:
+    def recommend_stocks(self, user_vector: np.ndarray, top_k: int = 5, diversity_factor: float = 0.1) -> List[Dict]:
         """推荐股票（基于20维向量相似度）"""
         stock_vectors = self.postgres_db.query(StockVector).all()
 
@@ -400,14 +400,44 @@ class StockService:
                     'sector': stock.sector,
                     'industry': stock.industry,
                     'similarity': float(similarity),
+                    'raw_similarity': float(similarity),
                     'updated_at': stock.updated_at.isoformat()
                 })
             except Exception as e:
                 logger.error(f"计算 {stock.symbol} 相似度失败: {e}")
                 continue
 
-        recommendations.sort(key=lambda x: x['similarity'], reverse=True)
-        return recommendations[:top_k]
+        # 第二步：多样性调整
+        return self._diversify_recommendations(recommendations, top_k, diversity_factor)
+
+    def _diversify_recommendations(self, recommendations: List[Dict], top_k: int,
+                                   diversity_factor: float) -> List[Dict]:
+        """
+        通过行业多样性来调整推荐结果
+        """
+        # 按原始相似度排序
+        recommendations.sort(key=lambda x: x['raw_similarity'], reverse=True)
+
+        selected = []  # 最终选择的推荐
+        sectors_seen = set()  # 已经选择的行业集合
+
+        for rec in recommendations:
+            if len(selected) >= top_k:
+                break
+
+            # 计算行业惩罚：如果该行业已经出现过，就扣分
+            sector_penalty = 0 if rec['sector'] not in sectors_seen else diversity_factor
+
+            # 最终得分 = 原始相似度 - 行业惩罚
+            final_score = rec['raw_similarity'] - sector_penalty
+            rec['similarity'] = final_score
+
+            selected.append(rec)
+            sectors_seen.add(rec['sector'])  # 记录这个行业已经出现
+
+        # 按最终得分重新排序
+        selected.sort(key=lambda x: x['similarity'], reverse=True)
+        return selected[:top_k]
 
     def get_all_stocks(self) -> List[Dict]:
         """获取所有股票信息"""
@@ -422,3 +452,47 @@ class StockService:
             }
             for stock in stocks
         ]
+
+    def get_stock_by_symbol(self, symbol: str) -> Optional[Dict]:
+        """根据symbol从PostgreSQL数据库获取股票数据"""
+        stock = self.postgres_db.query(StockVector).filter(StockVector.symbol == symbol).first()
+        if stock:
+            return {
+                "id": stock.id,
+                "symbol": stock.symbol,
+                "name": stock.name,
+                "sector": stock.sector,
+                "industry": stock.industry,
+                "vector_20d": stock.get_vector_20d().tolist(),
+                "created_at": stock.created_at.isoformat(),
+                "updated_at": stock.updated_at.isoformat()
+            }
+        return None
+
+
+    async def compute_stock_vector_components(self, symbol: str) -> tuple:
+        """计算股票向量的未归一化组成部分"""
+        try:
+            # 使用 await 进行异步查询
+            raw_data = await self.stock_raw_collection.find_one({'symbol': symbol})
+            if not raw_data:
+                logger.warning(f"未找到 {symbol} 的原始数据")
+                sector_vector = np.zeros(11)
+                sector_vector[:] = 1.0 / len(self.sector_list)
+                investment_vector = np.full(9, 0.5)
+                return sector_vector, investment_vector
+
+            # 1. 行业特征 (0-10维)
+            sector_vector = self._compute_sector_vector(raw_data)
+
+            # 2. 投资特征 (11-19维)
+            investment_vector = self._compute_investment_features(raw_data)
+
+            return sector_vector, investment_vector
+
+        except Exception as e:
+            logger.error(f"计算 {symbol} 向量组件失败: {e}")
+            sector_vector = np.zeros(11)
+            sector_vector[:] = 1.0 / len(self.sector_list)
+            investment_vector = np.full(9, 0.5)
+            return sector_vector, investment_vector

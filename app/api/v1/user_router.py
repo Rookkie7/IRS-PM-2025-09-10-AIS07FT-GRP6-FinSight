@@ -3,13 +3,13 @@ from requests.sessions import Session
 from fastapi.security import OAuth2PasswordBearer
 from app.model.models import UserPublic
 from app.services.auth_service import AuthService
-from app.deps import get_auth_service, get_user_service
+from app.deps import get_auth_service, get_user_service, get_stock_service
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pymongo.database import Database
 
 from app.adapters.db.database_client import get_postgres_session, get_mongo_db
 from app.services.user_service import UserService
-
+from app.services.stock_service import StockService
 router = APIRouter(prefix="/users", tags=["users"])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -168,12 +168,14 @@ async def get_user_vector(
 @router.post("/behavior/update")
 async def update_user_behavior(
         user_id: str = Query(..., description="用户ID"),
-        behavior_type: str = Query(..., description="行为类型: click, favorite, dwell, skip"),
+        behavior_type: str = Query(..., description="行为类型: click, favorite, dislike"),
         stock_symbol: str = Query(..., description="股票代码"),
         stock_sector: str = Query(None, description="股票行业，如果不提供尝试从MongoDB获取"),
+        invest_update: bool = Query(True, description="是否更新投资偏好"),
         duration: float = Query(0, description="停留时间(秒)"),
         mongo_db: Database = Depends(get_mongo_db),
         user_service: UserService = Depends(get_user_service),
+        stock_service: StockService = Depends(get_stock_service),
 ):
     """
     更新用户行为数据，用于动态调整用户偏好
@@ -184,11 +186,12 @@ async def update_user_behavior(
             "type": behavior_type,
             "stock_symbol": stock_symbol,
             "stock_sector": stock_sector,
-            "duration": duration
+            "duration": duration,
+            "invest_update": invest_update
         }
 
         #使用异步版本
-        success = await user_service.update_user_behavior(user_id, behavior_data, mongo_db)
+        success = await user_service.update_user_behavior(user_id, behavior_data, mongo_db, stock_service)
 
         if not success:
             raise HTTPException(status_code=500, detail="用户行为更新失败")
