@@ -76,12 +76,11 @@ export function RegisterPage({ onSwitchToLogin, onRegisterSuccess }: RegisterPag
     setLoading(true);
 
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth/register`;
+      const apiUrl = `${import.meta.env.VITE_API_BASE_URL}/auth/register`;
 
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ payload: formData }),
