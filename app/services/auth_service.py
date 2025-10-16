@@ -12,19 +12,8 @@ class AuthService:
     def __init__(self, repo: UserRepoPort):
         self.repo = repo
 
-    async def register(self, payload: UserCreate, embedder, dim: int = 32) -> str:
-        # 1) 生成用户画像文本
-        prof = {
-            "full_name": payload.full_name or "",
-            "bio": payload.bio or "",
-            "interests": ", ".join(payload.interests or []),
-            "sectors": ", ".join(payload.sectors or []),
-            "tickers": ", ".join(payload.tickers or []),
-        }
-        text = "\n".join([f"{k}: {v}" for k, v in prof.items() if v])
-        # 2) 嵌入（32维）
-        vecs = await embedder.embed([text or payload.username], dim=dim)
-        uid = await self.repo.create_user(payload, hash_password(payload.password), vecs[0])
+    async def register(self, payload: UserCreate) -> str:
+        uid = await self.repo.create_user(payload, hash_password(payload.password))
         return uid
 
     async def authenticate(self, email: str, password: str) -> str:

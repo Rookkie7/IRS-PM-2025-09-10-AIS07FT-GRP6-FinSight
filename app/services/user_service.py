@@ -2,9 +2,12 @@ import numpy as np
 import logging
 from typing import List, Dict, Any, Optional
 import random
+from fastapi import Depends
 from datetime import datetime
 
-from app.adapters.db.database_client import get_postgres_db
+from sqlalchemy.orm.session import Session
+
+from app.adapters.db.database_client import get_postgres_session
 from app.model.models import UserProfile
 
 logger = logging.getLogger(__name__)
@@ -22,8 +25,8 @@ from app.ports.storage import UserRepoPort
 from app.model.models import UserInDB
 
 class UserService:
-    def __init__(self, repo: UserRepoPort, embedder, dim: int = 32):
-        self.db = get_postgres_db()
+    def __init__(self, db: Session,repo: UserRepoPort, embedder, dim: int = 20):
+        self.db = db
         self.sector_list = SECTOR_LIST
         self.repo = repo
         self.embedder = embedder

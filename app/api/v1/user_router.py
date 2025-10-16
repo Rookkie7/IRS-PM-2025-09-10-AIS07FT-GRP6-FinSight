@@ -3,6 +3,10 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel, Field
 from app.domain.models import UserProfile, BehaviorEvent
 from app.services.news_service import NewsService
+from pydantic import BaseModel
+from requests.sessions import Session
+
+from app.model.models import UserPublic
 from app.services.auth_service import AuthService
 from app.services.user_service import UserService
 from app.model.models import UserPublic
@@ -19,7 +23,7 @@ def get_service() -> NewsService:
 router = APIRouter(prefix="/user", tags=["user"])
 
 @router.post("/profile/init_news")
-def init_profile(user_id: str = "demo", 
+def init_profile(user_id: str = "demo",
                  reset: bool = Query(False, description="是否重置已有画像为零向量"),
                  service: NewsService = Depends(get_service)) -> UserProfile:
     prof = service.prof_repo.get_or_create(user_id)
@@ -107,17 +111,10 @@ def user_bookmark(ev: BookmarkEvent, service: NewsService = Depends(get_service)
     news_sem = list(getattr(doc, "vector", []) or [])
     news_prof = list(getattr(doc, "vector_prof_20d", []) or [])
 
-    # bookmark 权重略高，表示“强偏好/留存”
-    w = 1.2
-    service.prof_repo.update_user_vectors_from_event(
-        user_id=ev.user_id, news_sem=news_sem, news_prof=news_prof, weight=w,
-    )
-    return {"ok": True, "weight": w}
+from app.adapters.db.database_client import get_postgres_session, get_mongo_db
+from app.services.user_service import UserService
 
-
-
-
-# router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(prefix="/users", tags=["users"])
 
 class ProfileUpdateIn(BaseModel):
     full_name: str | None = None
@@ -151,7 +148,7 @@ async def update_me(payload: ProfileUpdateIn, auth: AuthService = Depends(get_au
 async def init_user_profile(
         user_id: str = Query(..., description="用户ID"),
         reset: bool = Query(False, description="是否重置现有用户画像"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_session),
 ):
     """
     初始化20维用户画像
@@ -183,7 +180,7 @@ async def create_custom_user_profile(
         user_id: str = Query(..., description="用户ID"),
         industry_preferences: str = Query(..., description="11维行业偏好，逗号分隔"),
         investment_preferences: str = Query(..., description="9维投资偏好，逗号分隔"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_session),
 ):
     """
     创建自定义用户画像
@@ -223,7 +220,7 @@ async def create_custom_user_profile(
 @router.get("/profile/detail")
 async def get_user_profile_detail(
         user_id: str = Query(..., description="用户ID"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_session),
 ):
     """
     获取用户画像详细信息
@@ -248,7 +245,7 @@ async def get_user_profile_detail(
 @router.get("/vector/{user_id}")
 async def get_user_vector(
         user_id: str,
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_session),
 ):
     """
     获取用户20维向量
@@ -279,7 +276,7 @@ async def update_user_behavior(
         stock_symbol: str = Query(..., description="股票代码"),
         stock_sector: str = Query(None, description="股票行业，如果不提供尝试从MongoDB获取"),
         duration: float = Query(0, description="停留时间(秒)"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_session),
         mongo_db: Database = Depends(get_mongo_db)
 ):
     """
@@ -331,7 +328,7 @@ async def update_user_preferences(
         user_id: str = Query(..., description="用户ID"),
         industry_preferences: str = Query(None, description="11维行业偏好，逗号分隔"),
         investment_preferences: str = Query(None, description="9维投资偏好，逗号分隔"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_session),
 ):
     """
     直接更新用户偏好
@@ -381,7 +378,7 @@ async def update_user_preferences(
 @router.get("/preferences/explain")
 async def explain_user_preferences(
         user_id: str = Query(..., description="用户ID"),
-        postgres_db: Database = Depends(get_postgres_db),
+        postgres_db: Session = Depends(get_postgres_session),
 ):
     """
     解释用户偏好含义

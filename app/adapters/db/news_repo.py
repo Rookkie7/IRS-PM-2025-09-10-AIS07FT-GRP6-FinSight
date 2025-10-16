@@ -1,6 +1,6 @@
 from typing import Optional, List
 from bson import ObjectId
-from app.adapters.db.database_client import get_mongo_db, get_postgres_db
+from app.adapters.db.database_client import get_mongo_db, get_postgres_session
 from app.model.models import News
 
 class NewsRepo:
