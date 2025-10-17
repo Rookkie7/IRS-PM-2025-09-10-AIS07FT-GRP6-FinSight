@@ -10,6 +10,8 @@ from sqlalchemy.orm.session import Session
 from app.adapters.db.database_client import get_postgres_session
 from app.model.models import UserProfile
 
+from app.services.stock_service import StockService
+
 logger = logging.getLogger(__name__)
 
 # 行业列表
@@ -190,9 +192,9 @@ class UserService:
             "updated_at": profile.updated_at.isoformat()
         }
 
-    def update_user_behavior(self, user_id: str, behavior_data: Dict[str, Any]):
+    async def update_user_behavior(self, user_id: str, behavior_data: Dict[str, Any],mongo_db = None , stock_service = None):
         """
-        更新用户行为数据（简化版，基于股票交互）
+        更新用户行为数据方法（调整用户行业偏好）(调整用户投资偏好（可选））
         """
         try:
             profile = self.get_user_profile(user_id)
@@ -202,10 +204,21 @@ class UserService:
             behavior_type = behavior_data.get('type', 'click')
             stock_symbol = behavior_data.get('stock_symbol')
             stock_sector = behavior_data.get('stock_sector')
+            invest_update = behavior_data.get('invest_update')
+
+            # 如果没有提供行业，尝试从MongoDB获取（异步）
+            if not stock_sector and mongo_db is not None and stock_symbol:
+                collection = mongo_db["stocks"]
+                stock_data = await collection.find_one({"symbol": stock_symbol.upper()})
+                if stock_data and 'basic_info' in stock_data:
+                    stock_sector = stock_data['basic_info'].get('sector')
+                    behavior_data['stock_sector'] = stock_sector
 
             # 基于用户行为微调偏好
-            if stock_sector and stock_sector in self.sector_list:
-                self._adjust_sector_preference(profile, stock_sector, behavior_type)
+            if invest_update == True:
+                await self._adjust_preferences_based_on_behavior(profile, behavior_data,stock_service)
+            elif stock_sector in self.sector_list:
+                self._adjust_sector_preference_advanced(profile, stock_sector, behavior_type)
 
             # 重新构建向量
             updated_vector = profile.build_vector_from_components()
@@ -227,21 +240,81 @@ class UserService:
             self.db.rollback()
             return False
 
-    def _adjust_sector_preference(self, profile: UserProfile, sector: str, behavior_type: str):
-        """调整行业偏好"""
+    async def _adjust_preferences_based_on_behavior(self, profile: UserProfile, behavior_data: Dict[str, Any],stock_service :StockService):
+        """基于行为数据智能调整用户偏好"""
+        behavior_type = behavior_data.get('type')
+        duration = behavior_data.get('duration', 0)
+        stock_sector = behavior_data.get('stock_sector')
+
+        # 1. 行业偏好调整（考虑行为强度和时间）
+        if stock_sector in self.sector_list:
+            self._adjust_sector_preference_advanced(profile, stock_sector, behavior_type)
+
+        # 2. 投资偏好调整（基于股票特征）
+        stock_symbol = behavior_data.get('stock_symbol')
+        if stock_symbol:
+            await self._adjust_investment_preference_based_on_stock(profile, stock_symbol, behavior_type,stock_service)
+
+    def _adjust_sector_preference_advanced(self, profile: UserProfile, sector: str,
+                                           behavior_type: str):
+        """行业偏好调整"""
+        sector_index = self.sector_list.index(sector)
+        current_prefs = profile.industry_preferences or [0.5] * 11
+
+        # 基于行为类型的学习率
+        learning_rates = {
+            'click': 0.1,
+            'favorite': 0.3,
+            'dislike': -0.3
+        }
+
+        learning_rate = learning_rates.get(behavior_type, 0)
+        # 使用渐进式调整方法，向目标值1调整（对于正向行为）
+        if learning_rate > 0:
+            # 正向行为，向1调整
+            target_value = 1.0
+            current_prefs[sector_index] = max(0, min(1,
+                                                     current_prefs[sector_index] + learning_rate * (
+                                                                 target_value - current_prefs[sector_index])))
+        elif learning_rate < 0:
+            # 负向行为，向0调整
+            target_value = 0.0
+            current_prefs[sector_index] = max(0, min(1,
+                                                     current_prefs[sector_index] + abs(learning_rate) * (
+                                                                 target_value - current_prefs[sector_index])))
+        # 如果learning_rate为0，则不调整
+        profile.industry_preferences = current_prefs
+
+    async def _adjust_investment_preference_based_on_stock(self, profile: UserProfile,
+                                                           stock_symbol: str, behavior_type: str,
+                                                           stock_service : StockService):
+        """基于股票特征调整投资偏好"""
         try:
-            sector_index = self.sector_list.index(sector)
-            current_prefs = profile.industry_preferences or [0.5] * 11
+            # 获取股票的未归一化投资特征
+            _, investment_features = await stock_service.compute_stock_vector_components(stock_symbol)
+            current_prefs = profile.investment_preferences or [0.5] * 9
 
-            adjustment = 0.1 if behavior_type in ['click', 'favorite'] else -0.05
-            new_pref = max(0, min(1, current_prefs[sector_index] + adjustment))
+            # 根据行为类型调整：正反馈向股票特征靠近，负反馈远离
+            if behavior_type == 'dislike':
+                learning_rate = -0.1
+            elif behavior_type == 'click':
+                learning_rate = 0.05
+            elif behavior_type == 'favorite':
+                learning_rate = 0.1
+            else:
+                learning_rate = 0
 
-            current_prefs[sector_index] = new_pref
-            profile.industry_preferences = current_prefs
+            for i in range(9):
+                current_prefs[i] = max(0, min(1,
+                                              current_prefs[i] + learning_rate * (
+                                                          investment_features[i] - current_prefs[i])))
 
-        except ValueError:
-            pass  # 行业不在预定义列表中
+            profile.investment_preferences = current_prefs
 
+        except Exception as e:
+            logger.error(f"调整投资偏好失败: {e}")
+
+#这里这个方法在userrepo里没实现啊，用不了
     async def update_profile_and_embed(self, user: UserInDB, profile: dict) -> None:
         text = "\n".join([f"{k}: {v}" for k, v in profile.items() if v])
         vec = (await self.embedder.embed([text or user.username], dim=self.dim))[0]
