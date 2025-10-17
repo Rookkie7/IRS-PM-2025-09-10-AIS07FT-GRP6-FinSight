@@ -7,7 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.orm import Session
 from pymongo.database import Database
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import re
 from datetime import datetime
 
@@ -15,7 +15,7 @@ from app.model.models import StockVector, StockRawData
 
 logger = logging.getLogger(__name__)
 
-#获取标普500中的前100市值symbol列表
+# 获取标普500中的前100市值symbol列表
 sp500_top100 = ['NVDA', 'MSFT', 'AAPL', 'GOOGL', 'GOOG', 'AMZN', 'META', 'AVGO', 'TSLA', 'ORCL', 'JPM', 'WMT', 'LLY',
                 'V', 'NFLX', 'MA', 'XOM', 'JNJ', 'PLTR', 'COST', 'ABBV', 'HD', 'BAC', 'PG', 'AMD', 'UNH', 'GE', 'CVX',
                 'KO', 'CSCO', 'IBM', 'TMUS', 'PM', 'WFC', 'MS', 'GS', 'ABT', 'CAT', 'CRM', 'AXP', 'MRK', 'LIN', 'MCD',
@@ -32,10 +32,10 @@ class StockService:
     def __init__(self, postgres_db: Session, mongo_db: Database):
         self.postgres_db = postgres_db
         self.mongo_db = mongo_db
-        self.stock_raw_collection = mongo_db["stock_raw_data"]
+        self.stock_raw_collection = mongo_db["stocks"]
         self.sector_list = SECTOR_LIST
 
-    def fetch_stock_data(self, symbols: List[str]) -> Dict[str, StockRawData]:
+    async def fetch_stock_data(self, symbols: List[str]) -> Dict[str, StockRawData]:
         """从yfinance获取股票数据并存入MongoDB"""
         stock_data_dict = {}
 
@@ -56,13 +56,12 @@ class StockService:
                 stock_data.historical_data = self._fetch_historical_data(ticker)
 
                 # 4. 获取新闻和描述
-                # stock_data.news = self._fetch_news_data(ticker)
                 stock_data.descriptions = self._fetch_descriptions(ticker)
 
                 stock_data_dict[symbol] = stock_data
 
                 # 存入MongoDB
-                self._save_to_mongodb(stock_data)
+                await self._save_to_mongodb(stock_data)
 
                 logger.info(f"成功获取 {symbol} 的数据")
 
@@ -175,10 +174,10 @@ class StockService:
         except:
             return {}
 
-    def _save_to_mongodb(self, stock_data: StockRawData):
+    async def _save_to_mongodb(self, stock_data: StockRawData):
         """保存到MongoDB"""
         try:
-            self.stock_raw_collection.update_one(
+            await self.stock_raw_collection.update_one(
                 {'symbol': stock_data.symbol},
                 {'$set': stock_data.to_dict()},
                 upsert=True
@@ -186,10 +185,11 @@ class StockService:
         except Exception as e:
             logger.error(f"保存到MongoDB失败 {stock_data.symbol}: {e}")
 
-    def compute_stock_vector_20d(self, symbol: str) -> np.ndarray:
+    async def compute_stock_vector_20d(self, symbol: str) -> np.ndarray:
         """计算20维股票向量"""
         try:
-            raw_data = self.stock_raw_collection.find_one({'symbol': symbol})
+            # 使用 await 进行异步查询
+            raw_data = await self.stock_raw_collection.find_one({'symbol': symbol})
             if not raw_data:
                 logger.warning(f"未找到 {symbol} 的原始数据")
                 return self._create_default_vector_20d()
@@ -208,7 +208,7 @@ class StockService:
             norm = np.linalg.norm(vector_20d)
             if norm > 0:
                 vector_20d = vector_20d / norm
-
+            logger.info(f"stock_vector: {vector_20d}")
             return vector_20d
 
         except Exception as e:
@@ -324,7 +324,7 @@ class StockService:
 
         return vector
 
-    def update_stock_vectors(self, symbols: List[str]) -> Dict[str, Any]:
+    async def update_stock_vectors(self, symbols: List[str]) -> Dict[str, Any]:
         """更新股票向量（使用20维向量）"""
         results = {
             "updated": 0,
@@ -334,16 +334,16 @@ class StockService:
 
         for symbol in symbols:
             try:
-                # 计算20维向量
-                vector_20d = self.compute_stock_vector_20d(symbol)
-
-                # 从MongoDB获取基本信息
-                raw_data = self.stock_raw_collection.find_one({'symbol': symbol})
+                # 计算20维向量 - 使用 await
+                vector_20d = await self.compute_stock_vector_20d(symbol)
+                # logger.info(f"vector_20d: {vector_20d}")
+                # 从MongoDB获取基本信息 - 使用 await
+                raw_data = await self.stock_raw_collection.find_one({'symbol': symbol})
                 basic_info = raw_data.get('basic_info', {}) if raw_data else {}
 
                 # 更新或创建PostgreSQL记录
                 existing = self.postgres_db.query(StockVector).filter(StockVector.symbol == symbol).first()
-
+                # logger.info(f"existing: {existing}")
                 if existing:
                     existing.set_vector_20d(vector_20d)
                     existing.name = basic_info.get('name', symbol)
@@ -366,12 +366,14 @@ class StockService:
 
             except Exception as e:
                 logger.error(f"更新 {symbol} 向量失败: {e}")
+                import traceback
+                logger.error(f"详细错误: {traceback.format_exc()}")
                 results["failed"].append(symbol)
 
         self.postgres_db.commit()
         return results
 
-    def recommend_stocks(self, user_vector: np.ndarray, top_k: int = 5) -> List[Dict]:
+    def recommend_stocks(self, user_vector: np.ndarray, top_k: int = 5, diversity_factor: float = 0.1) -> List[Dict]:
         """推荐股票（基于20维向量相似度）"""
         stock_vectors = self.postgres_db.query(StockVector).all()
 
@@ -398,14 +400,44 @@ class StockService:
                     'sector': stock.sector,
                     'industry': stock.industry,
                     'similarity': float(similarity),
+                    'raw_similarity': float(similarity),
                     'updated_at': stock.updated_at.isoformat()
                 })
             except Exception as e:
                 logger.error(f"计算 {stock.symbol} 相似度失败: {e}")
                 continue
 
-        recommendations.sort(key=lambda x: x['similarity'], reverse=True)
-        return recommendations[:top_k]
+        # 第二步：多样性调整
+        return self._diversify_recommendations(recommendations, top_k, diversity_factor)
+
+    def _diversify_recommendations(self, recommendations: List[Dict], top_k: int,
+                                   diversity_factor: float) -> List[Dict]:
+        """
+        通过行业多样性来调整推荐结果
+        """
+        # 按原始相似度排序
+        recommendations.sort(key=lambda x: x['raw_similarity'], reverse=True)
+
+        selected = []  # 最终选择的推荐
+        sectors_seen = set()  # 已经选择的行业集合
+
+        for rec in recommendations:
+            if len(selected) >= top_k:
+                break
+
+            # 计算行业惩罚：如果该行业已经出现过，就扣分
+            sector_penalty = 0 if rec['sector'] not in sectors_seen else diversity_factor
+
+            # 最终得分 = 原始相似度 - 行业惩罚
+            final_score = rec['raw_similarity'] - sector_penalty
+            rec['similarity'] = final_score
+
+            selected.append(rec)
+            sectors_seen.add(rec['sector'])  # 记录这个行业已经出现
+
+        # 按最终得分重新排序
+        selected.sort(key=lambda x: x['similarity'], reverse=True)
+        return selected[:top_k]
 
     def get_all_stocks(self) -> List[Dict]:
         """获取所有股票信息"""
@@ -420,3 +452,47 @@ class StockService:
             }
             for stock in stocks
         ]
+
+    def get_stock_by_symbol(self, symbol: str) -> Optional[Dict]:
+        """根据symbol从PostgreSQL数据库获取股票数据"""
+        stock = self.postgres_db.query(StockVector).filter(StockVector.symbol == symbol).first()
+        if stock:
+            return {
+                "id": stock.id,
+                "symbol": stock.symbol,
+                "name": stock.name,
+                "sector": stock.sector,
+                "industry": stock.industry,
+                "vector_20d": stock.get_vector_20d().tolist(),
+                "created_at": stock.created_at.isoformat(),
+                "updated_at": stock.updated_at.isoformat()
+            }
+        return None
+
+
+    async def compute_stock_vector_components(self, symbol: str) -> tuple:
+        """计算股票向量的未归一化组成部分"""
+        try:
+            # 使用 await 进行异步查询
+            raw_data = await self.stock_raw_collection.find_one({'symbol': symbol})
+            if not raw_data:
+                logger.warning(f"未找到 {symbol} 的原始数据")
+                sector_vector = np.zeros(11)
+                sector_vector[:] = 1.0 / len(self.sector_list)
+                investment_vector = np.full(9, 0.5)
+                return sector_vector, investment_vector
+
+            # 1. 行业特征 (0-10维)
+            sector_vector = self._compute_sector_vector(raw_data)
+
+            # 2. 投资特征 (11-19维)
+            investment_vector = self._compute_investment_features(raw_data)
+
+            return sector_vector, investment_vector
+
+        except Exception as e:
+            logger.error(f"计算 {symbol} 向量组件失败: {e}")
+            sector_vector = np.zeros(11)
+            sector_vector[:] = 1.0 / len(self.sector_list)
+            investment_vector = np.full(9, 0.5)
+            return sector_vector, investment_vector
