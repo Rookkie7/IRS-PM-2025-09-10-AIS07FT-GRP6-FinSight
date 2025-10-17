@@ -1,6 +1,6 @@
 # app/api/v1/forecast_router.py
 from __future__ import annotations
-from typing import Optional, List, Literal, Any
+from typing import Optional, List, Literal, Any, Annotated
 from fastapi import APIRouter, Depends, Query, HTTPException
 
 from app.adapters.db.database_client import get_mongo_db
@@ -12,6 +12,8 @@ import asyncio
 router = APIRouter(prefix="/forecast", tags=["forecast"])
 
 MethodType = Literal["arima", "prophet", "lgbm", "lstm", "persistence", "naive-drift", "ma"]
+METHOD_REGEX = r"^(arima|prophet|lgbm|lstm|ma|naive-drift|auto|ensemble\([a-zA-Z,\-\s]+\))$"
+
 
 def sanitize_for_json(obj: Any) -> Any:
     """递归将 NaN/±Inf → None，避免 JSON 序列化报错"""
@@ -111,6 +113,25 @@ async def get_forecast(limit: int = 100):
 async def debug_series(ticker: str, svc: ForecastService = Depends(get_forecast_service)):
     closes = await svc.price_provider.get_recent_closes(ticker, lookback_days=252)
     return {"ticker": ticker, "n": len(closes), "head": closes[:3], "tail": closes[-3:]}
+
+@router.get("", summary="对单支股票进行预测（键值对查询）")
+async def forecast_query(
+    ticker: Annotated[str, Query(description="如 AAPL")],
+    horizon_days: Annotated[int, Query(ge=1, le=365)] = 7,
+    horizons: Annotated[Optional[str], Query(description="逗号分隔: 7,30,90,180")] = "1,2,3,4,5,7,30,90,180",
+    method: Annotated[str, Query(
+        pattern=METHOD_REGEX,
+        description="arima / prophet / lgbm / lstm / ma / naive-drift / auto / ensemble(a,b,...)"
+    )] = "naive-drift",
+    svc = Depends(get_forecast_service),
+):
+    hs = [int(x) for x in horizons.split(",") if x.strip().isdigit()] if horizons else None
+    try:
+        res = await svc.forecast(ticker=ticker, horizon_days=horizon_days, horizons=hs, method=method)
+        return sanitize_for_json(res.dict() if hasattr(res, "dict") else res)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/stock")
 async def get_stock_info(ticker: str):
