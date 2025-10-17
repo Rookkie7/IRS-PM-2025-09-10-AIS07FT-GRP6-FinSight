@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pymongo.database import Database
-
+import math
 from sqlalchemy.orm.session import Session
 
 from app.deps import get_auth_service, get_user_service
@@ -130,6 +130,16 @@ async def get_all_stocks(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取股票列表失败: {str(e)}")
 
+def clean_float_values(data):
+    """清理数据中的无效浮点数值"""
+    if isinstance(data, float):
+        return data if math.isfinite(data) else None
+    elif isinstance(data, dict):
+        return {k: clean_float_values(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [clean_float_values(item) for item in data]
+    else:
+        return data
 
 @router.get("/raw-data/{symbol}")
 async def get_stock_raw_data(
@@ -149,11 +159,12 @@ async def get_stock_raw_data(
 
         # 移除MongoDB的_id字段
         raw_data.pop('_id', None)
-
+        # 清理无效的浮点数值
+        cleaned_data = clean_float_values(raw_data)
         return {
             "ok": True,
             "symbol": symbol,
-            "raw_data": raw_data
+            "raw_data": cleaned_data
         }
     except HTTPException:
         raise
