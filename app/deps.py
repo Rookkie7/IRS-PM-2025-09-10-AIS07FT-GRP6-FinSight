@@ -13,7 +13,8 @@ from adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvid
 from services.news_service import NewsService
 from services.rec_service import RecService
 from services.rag_service import RagService
-from services.forecast_service import ForecastService
+from app.services.forecast_service import ForecastService, ForecastConfig
+from app.adapters.db.price_provider_mongo import MongoStockPriceProvider
 from config import settings
 
 def get_query_embedder():
@@ -72,5 +73,10 @@ def get_rag_service():
         dim=32,
     )
 
-def get_forecast_service():
-    return ForecastService()
+
+def get_price_provider():
+    return MongoStockPriceProvider(collection_name="stocks")
+
+def get_forecast_service(provider = Depends(get_price_provider)):
+    cfg = ForecastConfig(lookback_days=252, ma_window=20)
+    return ForecastService(price_provider=provider, cfg=cfg)

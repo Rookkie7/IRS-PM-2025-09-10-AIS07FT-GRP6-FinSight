@@ -24,11 +24,11 @@ def sanitize_for_json(obj: Any) -> Any:
     return obj
 
 @router.get("/get")
-async def get_forecast(limit: int = 10):
+async def get_forecast(limit: int = 100):
     db = get_mongo_db()
     col = db['stocks']
 
-    cursor = col.find({}, {"_id": 0}).sort("symbol", 1)
+    cursor = col.find({}, {"_id": 0}).sort("symbol", 1).limit(limit)
     docs = await cursor.to_list()
 
     if not docs:
@@ -37,6 +37,80 @@ async def get_forecast(limit: int = 10):
     docs = sanitize_for_json(docs)
 
     return {"count": len(docs), "data": docs}
+'''
+"symbol": "AAPL",
+            "basic_info": {
+                "name": "Apple Inc.",
+                "sector": "Technology",
+                "industry": "Consumer Electronics",
+                "market_cap": 3700302807040,
+                "country": "United States",
+                "currency": "USD"
+            },
+            "created_at": "2025-10-16T08:41:38.465000",
+            "descriptions": {
+                "business_summary": "..."
+            },
+            "financials": {
+                "key_ratios": {
+                    "profit_margin": 0.24295999,
+                    "revenue_growth": 0.096,
+                    "return_on_equity": 1.49814,
+                    "debt_to_equity": 154.486,
+                    "current_ratio": 0.868,
+                    "operating_margin": 0.29990998,
+                    "gross_margin": 0.46678,
+                    "earnings_growth": 0.121,
+                    "beta": 1.094
+                },
+                "valuation_metrics": {
+                    "market_cap": 3700302807040,
+                    "trailing_pe": 37.893616,
+                    "forward_pe": 30.004812,
+                    "price_to_sales": 9.055498,
+                    "price_to_book": 56.271717,
+                    "enterprise_value": 3746628894720
+                },
+                "dividend_info": {
+                    "dividend_yield": 0.42,
+                    "payout_ratio": 0.1533
+                }
+            },
+            "historical_data": {
+                "time_series": [
+                    {
+                        "date": "2024-10-16T04:00:00",
+                        "open": 230.52713995218934,
+                        "close": 230.706298828125,
+                        "high": 231.04472016362837,
+                        "low": 228.77528327315235,
+                        "volume": 34082200
+                    },
+                    {
+                        "date": "2024-10-17T04:00:00",
+                        "open": 232.348638945834,
+                        "close": 231.07456970214844,
+                        "high": 232.76670668063704,
+                        "low": 229.4521309302649,
+                        "volume": 32993800
+                    },
+                    {...}
+                    
+                "volatility_30d": 0.24750883337798193,
+                "volatility_90d": 0.23385265692524293,
+                "momentum_1m": 0.04698720440139992,
+                "momentum_3m": 0.193739974393474,
+                "volume_avg_30d": 53881043.333333336
+            },
+            "updated_at": "2025-10-16T08:41:38.465000"
+        }
+    ]
+'''
+
+@router.get("/debug/series")
+async def debug_series(ticker: str, svc: ForecastService = Depends(get_forecast_service)):
+    closes = await svc.price_provider.get_recent_closes(ticker, lookback_days=252)
+    return {"ticker": ticker, "n": len(closes), "head": closes[:3], "tail": closes[-3:]}
 
 @router.get("/stock")
 async def get_stock_info(ticker: str):
@@ -60,7 +134,7 @@ async def forecast_batch(
     limit: int = Query(100, ge=1, le=1000, description="最多处理多少支股票"),
     symbols: Optional[str] = Query(None, description="逗号分隔: AAPL,TSLA,NVDA；传了就只用这些"),
     horizon_days: int = Query(7, ge=1, le=365),
-    horizons: Optional[str] = Query(None, description="逗号分隔: 7,30,90,180"),
+    horizons: Optional[str] = Query("7,30,90,180", description="逗号分隔: 7,30,90,180"),
     method: MethodType | str = Query("naive-drift", description="arima / naive-drift / ma"),
     concurrency: int = Query(8, ge=1, le=64, description="并发度（根据CPU/IO调整）"),
     svc: ForecastService = Depends(get_forecast_service),
@@ -88,6 +162,7 @@ async def forecast_batch(
         if not docs:
             raise HTTPException(status_code=404, detail="No stocks found in MongoDB.")
         tickers = [d.get("symbol") for d in docs if d.get("symbol")]
+        # print(tickers)
 
     # 并发预测（用信号量控制并发度，避免打爆CPU/IO）
     sem = asyncio.Semaphore(concurrency)
