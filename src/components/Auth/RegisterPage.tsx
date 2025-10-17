@@ -19,6 +19,18 @@ const MOCK_TICKERS = [
     'JPM', 'V', 'WMT', 'JNJ', 'PG', 'MA', 'HD', 'BAC'
 ];
 
+const INVESTMENT_PREFERENCES = [
+    { key: 'market_cap', label: 'Market Cap Preference (0=Small-cap, 1=Large-cap)' },
+    { key: 'growth_value', label: 'Growth-Value Preference (0=Value, 1=Growth)' },
+    { key: 'dividend', label: 'Dividend Preference (0=Low Priority, 1=High Priority)' },
+    { key: 'risk_tolerance', label: 'Risk Tolerance (0=Conservative, 1=Aggressive)' },
+    { key: 'liquidity', label: 'Liquidity Requirement (0=Low, 1=High)' },
+    { key: 'quality', label: 'Quality Preference (0=Low Priority, 1=High Priority)' },
+    { key: 'valuation_safety', label: 'Valuation Safety (0=Accept High Valuation, 1=Require Safety Margin)' },
+    { key: 'momentum', label: 'Momentum Preference (0=No Momentum Chasing, 1=Believe in Momentum)' },
+    { key: 'efficiency', label: 'Efficiency Preference (0=Not Concerned, 1=High Priority)' },
+];
+
 interface RegisterPageProps {
     onSwitchToLogin: () => void;
     // onRegisterSuccess: (token: string, user: any) => void;
@@ -35,6 +47,17 @@ export function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
         interests: [] as string[],
         sectors: [] as string[],
         tickers: [] as string[],
+        investment_preference: {
+            market_cap: 0.5,
+            growth_value: 0.5,
+            dividend: 0.5,
+            risk_tolerance: 0.5,
+            liquidity: 0.5,
+            quality: 0.5,
+            valuation_safety: 0.5,
+            momentum: 0.5,
+            efficiency: 0.5,
+        },
     });
 
     const [loading, setLoading] = useState(false);
@@ -69,6 +92,16 @@ export function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
         setFormData({
             ...formData,
             tickers: toggleArrayItem(formData.tickers, ticker),
+        });
+    };
+
+    const handlePreferenceChange = (key: string, value: number) => {
+        setFormData({
+            ...formData,
+            investment_preference: {
+                ...formData.investment_preference,
+                [key]: value,
+            },
         });
     };
 
@@ -262,6 +295,41 @@ export function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
                                 >
                                     {ticker}
                                 </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-4">
+                            Investment Preferences
+                        </label>
+                        <div className="space-y-6">
+                            {INVESTMENT_PREFERENCES.map(({ key, label }) => (
+                                <div key={key}>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="text-sm text-gray-600">{label}</label>
+                                        <span className="text-sm font-medium text-blue-600">
+                                            {formData.investment_preference[key as keyof typeof formData.investment_preference].toFixed(1)}
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.2"
+                                        value={formData.investment_preference[key as keyof typeof formData.investment_preference]}
+                                        onChange={(e) => handlePreferenceChange(key, parseFloat(e.target.value))}
+                                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                                    />
+                                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+                                        <span>0.0</span>
+                                        <span>0.2</span>
+                                        <span>0.4</span>
+                                        <span>0.6</span>
+                                        <span>0.8</span>
+                                        <span>1.0</span>
+                                    </div>
+                                </div>
                             ))}
                         </div>
                     </div>
