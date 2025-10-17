@@ -35,7 +35,7 @@ htmlcov/
 *.db
 
 # 环境变量文件（包含敏感信息）
-.env
+app/.env
 .env.*
 !.env.example
 
@@ -64,3 +64,7 @@ docker-compose.override.yml
 *.pid
 
 
+# === sensitive keys ===
+*.pem
+*.key
+*.crt
