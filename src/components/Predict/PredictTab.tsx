@@ -1,5 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, Calendar, Target, AlertCircle, BarChart } from 'lucide-react';
+import { fetchForecast } from '../../api/forecast';
+import { toPredictionData, type PredictionData } from '../../utils/forecastMapper';
+
+const symbols = ['AAPL', 'TSLA', 'NVDA', 'MSFT'];
+const companyNames = ['Apple Inc.', 'Tesla Inc.', 'NVIDIA Corp.', 'Microsoft Corp.'];
+const currentPrices = [195.12, 248.33, 612.45, 370.88];
+const risks: ('Low' | 'Medium' | 'High')[] = ['Low', 'Medium', 'Low', 'Low'];
+const accuracies = [0.89, 0.82, 0.86, 0.91];
+const lastUpdates = ['2 minutes ago', '5 minutes ago', '3 minutes ago', '1 minute ago'];
+
+
 
 interface PredictionData {
   symbol: string;
@@ -17,11 +28,22 @@ interface PredictionData {
   lastUpdated: string;
 }
 
+function relativeFromNow(iso: string) {
+  const sec = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (sec < 60) return `${sec} seconds ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} minutes ago`;
+  const hr = Math.floor(min / 60);
+  return `${hr} hours ago`;
+}
+
+
 const mockPredictions: PredictionData[] = [
+
   {
-    symbol: 'AAPL',
-    companyName: 'Apple Inc.',
-    currentPrice: 195.12,
+    symbol: symbols[0],
+    companyName: companyNames[0],
+    currentPrice: currentPrices[0],
     predictions: [
       { period: '1 Week', predictedPrice: 198.45, confidence: 0.85, change: 3.33, changePercent: 1.71 },
       { period: '1 Month', predictedPrice: 205.20, confidence: 0.78, change: 10.08, changePercent: 5.17 },
@@ -29,13 +51,13 @@ const mockPredictions: PredictionData[] = [
       { period: '6 Months', predictedPrice: 235.60, confidence: 0.52, change: 40.48, changePercent: 20.75 },
     ],
     risk: 'Low',
-    accuracy: 0.89,
+    accuracy: accuracies[0],
     lastUpdated: '2 minutes ago'
   },
   {
-    symbol: 'TSLA',
-    companyName: 'Tesla Inc.',
-    currentPrice: 248.50,
+    symbol: symbols[1],
+    companyName: companyNames[1],
+    currentPrice: currentPrices[1],
     predictions: [
       { period: '1 Week', predictedPrice: 252.10, confidence: 0.72, change: 3.60, changePercent: 1.45 },
       { period: '1 Month', predictedPrice: 265.30, confidence: 0.68, change: 16.80, changePercent: 6.76 },
@@ -43,15 +65,48 @@ const mockPredictions: PredictionData[] = [
       { period: '6 Months', predictedPrice: 315.20, confidence: 0.45, change: 66.70, changePercent: 26.84 },
     ],
     risk: 'High',
-    accuracy: 0.74,
+    accuracy: accuracies[1],
     lastUpdated: '5 minutes ago'
-  }
+  },
+  {
+    symbol: symbols[2],
+    companyName: companyNames[2],
+    currentPrice: currentPrices[2],
+    predictions: [
+      { period: '1 Week', predictedPrice: 252.10, confidence: 0.72, change: 3.60, changePercent: 1.45 },
+      { period: '1 Month', predictedPrice: 265.30, confidence: 0.68, change: 16.80, changePercent: 6.76 },
+      { period: '3 Months', predictedPrice: 290.75, confidence: 0.58, change: 42.25, changePercent: 17.00 },
+      { period: '6 Months', predictedPrice: 315.20, confidence: 0.45, change: 66.70, changePercent: 26.84 },
+    ],
+    risk: 'Medium',
+    accuracy: accuracies[2],
+    lastUpdated: '5 minutes ago'
+  },
+  {
+    symbol: symbols[3],
+    companyName: companyNames[3],
+    currentPrice: currentPrices[3],
+    predictions: [
+      { period: '1 Week', predictedPrice: 252.10, confidence: 0.72, change: 3.60, changePercent: 1.45 },
+      { period: '1 Month', predictedPrice: 265.30, confidence: 0.68, change: 16.80, changePercent: 6.76 },
+    ],
+    risk: 'Low',
+    accuracy: accuracies[3],
+    lastUpdated: '1 minute ago'
+  },
+
 ];
+// Frontend Website page
 
 export const PredictTab: React.FC = () => {
-  const [selectedStock, setSelectedStock] = useState(mockPredictions[0]);
+  // const [selectedStock, setSelectedStock] = useState(mockPredictions[0]);
+  // const [selectedPeriod, setSelectedPeriod] = useState('1 Month');
+  const [selectedStock, setSelectedStock] = useState<PredictionData>(mockPredictions[1]);
   const [selectedPeriod, setSelectedPeriod] = useState('1 Month');
 
+  const [selectedSymbol, setSelectedSymbol] = useState(symbols[1]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const getRiskColor = (risk: string) => {
     switch (risk) {
       case 'Low': return 'text-green-600 bg-green-50 border-green-200';
@@ -62,6 +117,35 @@ export const PredictTab: React.FC = () => {
   };
 
   const currentPrediction = selectedStock.predictions.find(p => p.period === selectedPeriod) || selectedStock.predictions[1];
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      setErr(null);
+      try {
+        const backend = await fetchForecast(selectedSymbol, [7, 30, 90, 180], 'naive-drift');
+        // toPredictionData 里没有 lastUpdated 字段，这里补充一下
+        const mapped = toPredictionData(backend, companyNames[symbols.indexOf(selectedSymbol)] || '');
+        const withUpdated: PredictionData = {
+          ...mapped,
+          lastUpdated: relativeFromNow(backend.generated_at),
+        };
+        if (alive) {
+          setSelectedStock(withUpdated);
+          // 如果当前选中的 period 不在返回里，回退到第一个
+          const periods = withUpdated.predictions.map(p => p.period);
+          if (!periods.includes(selectedPeriod)) setSelectedPeriod(withUpdated.predictions[0]?.period ?? '1 Week');
+        }
+      } catch (e: any) {
+        if (alive) setErr(e.message || 'Load failed');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [selectedSymbol]);
+
+
 
   return (
     <div className="p-6 space-y-6">
@@ -74,9 +158,13 @@ export const PredictTab: React.FC = () => {
         <div className="flex items-center space-x-4">
           <select
             value={selectedStock.symbol}
+            // onChange={(e) => {
+            //   const stock = mockPredictions.find(p => p.symbol === e.target.value);
+            //   if (stock) setSelectedStock(stock);
+            // }}
             onChange={(e) => {
-              const stock = mockPredictions.find(p => p.symbol === e.target.value);
-              if (stock) setSelectedStock(stock);
+              const sym = e.target.value;
+              setSelectedSymbol(sym);     // 👉 修改：只更新 symbol，数据由 useEffect 拉取
             }}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
