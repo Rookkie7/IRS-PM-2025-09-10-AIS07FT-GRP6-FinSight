@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.adapters.db.database_client import init_mongo_via_ssh, init_postgres_via_ssh
+from app.adapters.db.database_client import init_mongo_via_ssh, init_postgres_sync
 from app.config import settings
 
 # —— 路由 —— #
