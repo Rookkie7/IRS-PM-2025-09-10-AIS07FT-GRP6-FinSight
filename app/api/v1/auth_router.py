@@ -6,7 +6,8 @@ from pydantic import BaseModel, EmailStr
 from app.adapters.db.user_repo import UserRepo
 from app.model.models import UserCreate, Token, UserPublic, UserInDB, RegisterResponse
 from app.services.auth_service import AuthService
-from app.deps import get_auth_service, get_embedder, get_user_repo, get_user_service
+from app.deps import get_auth_service, get_user_repo, get_user_service
+from app.services.stock_service import SECTOR_LIST
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -33,6 +34,17 @@ async def register_user(payload: UserCreate,
                         user_svc: UserService = Depends(get_user_service),
                         user_repo: UserRepo = Depends(get_user_repo)):
     uid = await auth_svc.register(payload)
+    if profile_data is None:
+        profile_data = {}
+    selected = set(payload.sectors or [])
+    industry_vector = [
+        0.5 if sector in selected else 0.0
+        for sector in SECTOR_LIST
+    ]
+    profile_data["industry_preferences"] = industry_vector
+    profile_data["investment_preferences"] = list(payload.investment_preference.values())
+    print(profile_data)
+
     user_svc.init_user_profile(uid,False, profile_data)
     u: UserInDB | None = await user_repo.get_by_id(uid)
     assert u is not None, "user not found"

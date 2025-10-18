@@ -1,20 +1,22 @@
 from sqlalchemy.orm.session import Session
 from fastapi import Depends
-from app.adapters.db.database_client import get_postgres_session
+from pymongo.database import Database
+from app.adapters.db.database_client import get_postgres_session,get_mongo_db
 from app.adapters.db.user_repo import UserRepo
 from app.adapters.llm.openai_llm import OpenAICompatLLM
 from app.ports.storage import UserRepoPort
 from app.services.auth_service import AuthService
 from app.services.user_service import UserService
-from config import settings
-from adapters.db.news_repo import NewsRepo
-from adapters.vector.mongo_vector_index import MongoVectorIndex
-from adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
-from services.news_service import NewsService
-from services.rec_service import RecService
-from services.rag_service import RagService
-from services.forecast_service import ForecastService
-from config import settings
+from app.services.stock_service import StockService
+# from config import settings
+from app.adapters.db.news_repo import NewsRepo
+from app.adapters.vector.mongo_vector_index import MongoVectorIndex
+from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
+from app.services.news_service import NewsService
+from app.services.rec_service import RecService
+from app.services.rag_service import RagService
+from app.services.forecast_service import ForecastService
+from app.config import settings
 
 def get_query_embedder():
     # You can also use OpenAI Embeddings; here we use the local SB model
@@ -37,6 +39,15 @@ def get_user_service(
         db: Session = Depends(get_postgres_session),
         embedder = Depends(get_embedder),):
     return UserService(db=db, repo=get_user_repo(), embedder=embedder, dim=32)
+
+def get_stock_service(
+        postgres_db: Session = Depends(get_postgres_session),
+        mongo_db: Database = Depends(get_mongo_db),
+):
+    return StockService(
+        postgres_db=postgres_db,
+        mongo_db=mongo_db,
+    )
 
 def get_llm():
     if settings.LLM_PROVIDER == "deepseek_openai":

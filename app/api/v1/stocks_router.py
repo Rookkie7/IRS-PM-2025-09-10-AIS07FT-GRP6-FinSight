@@ -3,10 +3,12 @@ from pymongo.database import Database
 
 from sqlalchemy.orm.session import Session
 
+from app.deps import get_auth_service, get_user_service
 from app.adapters.db.database_client import get_postgres_session, get_mongo_db
 from app.services.stock_service import StockService
+from app.services.user_service import UserService
 
-router = APIRouter(prefix="/api/stocks", tags=["stocks"])
+router = APIRouter(prefix="/stocks", tags=["stocks"])
 
 
 @router.post("/fetch-raw-data")
@@ -24,7 +26,7 @@ async def fetch_raw_stock_data(
         # 解析逗号分隔的字符串
         symbols_to_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
 
-        result = stock_service.fetch_stock_data(symbols_to_list)
+        result = await stock_service.fetch_stock_data(symbols_to_list)
 
         return {
             "ok": True,
@@ -54,7 +56,7 @@ async def update_stock_vectors(
         if not symbols_to_list:
             raise HTTPException(status_code=400, detail="股票代码列表为空")
 
-        result = stock_service.update_stock_vectors(symbols_to_list)
+        result = await stock_service.update_stock_vectors(symbols_to_list)
 
         return {
             "ok": True,
@@ -70,15 +72,15 @@ async def get_stock_recommendations(
         user_id: str = Query(..., description="用户ID"),
         top_k: int = Query(5, ge=1, le=20, description="推荐数量"),
         postgres_db: Session = Depends(get_postgres_session),
-        mongo_db: Database = Depends(get_mongo_db)
+        mongo_db: Database = Depends(get_mongo_db),
+        user_service: UserService = Depends(get_user_service),
+        diversity_factor: float = Query(0.1, ge=0, le=1, description="多样性因子")
 ):
     """
     获取个性化股票推荐（基于20维向量）
     """
-    from app.services.user_service import UserService
 
     try:
-        user_service = UserService(postgres_db)
         stock_service = StockService(postgres_db, mongo_db)
 
         # 检查用户是否存在
@@ -93,7 +95,7 @@ async def get_stock_recommendations(
         user_vector = user_profile.get_profile_vector_20d()
 
         # 获取推荐
-        recommendations = stock_service.recommend_stocks(user_vector, top_k)
+        recommendations = stock_service.recommend_stocks(user_vector, top_k, diversity_factor)
 
         return {
             "ok": True,
@@ -138,8 +140,9 @@ async def get_stock_raw_data(
     获取股票的原始数据（从MongoDB）
     """
     try:
-        collection = mongo_db["stock_raw_data"]
-        raw_data = collection.find_one({"symbol": symbol.upper()})
+        collection = mongo_db["stocks"]
+        # 使用 await 调用异步的 find_one
+        raw_data = await collection.find_one({"symbol": symbol.upper()})
 
         if not raw_data:
             raise HTTPException(status_code=404, detail=f"股票 {symbol} 的原始数据未找到")
