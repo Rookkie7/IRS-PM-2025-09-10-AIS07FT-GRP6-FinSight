@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     LLM_OPENAI_API_KEY: str = Field("sk-local-placeholder", alias="LLM_OPENAI_API_KEY")
     LLM_MODEL: str = Field("deepseek-8b", alias="LLM_MODEL")
 
+    # Rag flow
+    RAGFLOW_BASE_URL: str = Field(..., env="RAGFLOW_BASE_URL")  # RAGFlow 的 HTTP 服务地址
+    RAGFLOW_API_KEY: str = Field(..., env="RAGFLOW_API_KEY")
+    RAGFLOW_MODEL: str = Field(..., env="RAGFLOW_MODEL")
+    RAGFLOW_APP_ID: str = ""  # RAGFlow 应用/流水线ID（如需要）
+    RAGFLOW_TIMEOUT: int = 60  # 超时时间(s)
+    RAG_MAX_HISTORY_TURNS: int = 8  # 多轮记忆条数上限（每次取尾部N轮）
+    RAGFLOW_DATASET_IDS: str = Field("", env="RAGFLOW_DATASET_IDS")  # 逗号分隔
+    RAGFLOW_CHAT_NAME_PREFIX: str = Field("chat", env="RAGFLOW_CHAT_NAME_PREFIX")
+
     @model_validator(mode="after")
     def _validate_mongo(self):
         # 如果没开 SSH 隧道，则必须提供 MONGO_URI

@@ -75,8 +75,7 @@ def get_rec_service():
     return RecService(vector_index=get_vector_index(), dim=settings.DEFAULT_VECTOR_DIM)
 
 def get_rag_service():
-    # todo
-    ...
+    return RagService()
 
 def get_forecast_service():
     return ForecastService()
