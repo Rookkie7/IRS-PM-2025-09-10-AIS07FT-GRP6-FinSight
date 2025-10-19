@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  TrendingUp, Star, DollarSign, BarChart3, Heart, ThumbsDown, 
   RefreshCw, Loader2, Search, List, Sparkles, ChevronLeft, 
-  ChevronRight, Eye, Volume2, Target, Zap, Shield, TrendingDown,
-  Scale, X
+  ChevronRight, Scale, X, Crown 
 } from 'lucide-react';
 import { useAuth } from '../Auth/AuthContext';
 import { StockDetailModal } from './StockDetailModal';
 import { ComparisonModal } from './ComparisonModal';
+import { AdvancedRecommendations } from './AdvancedRecommendations';
+import { BasicRecommendations } from './BasicRecommendations';
+import { StockList } from './StockList';
 
 interface StockRecommendation {
   symbol: string;
@@ -17,6 +18,27 @@ interface StockRecommendation {
   similarity: number;
   raw_similarity: number;
   updated_at: string;
+}
+
+interface AdvancedRecommendation {
+  symbol: string;
+  name: string;
+  sector: string;
+  industry: string;
+  final_score: number;
+  component_scores: {
+    preference: number;
+    risk_adjusted: number;
+    diversification: number;
+    market_timing: number;
+  };
+  explanation: string;
+  weight_used: {
+    preference: number;
+    risk_return: number;
+    diversification: number;
+    timing: number;
+  };
 }
 
 interface StockListItem {
@@ -84,18 +106,20 @@ interface StockRawData {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-type ViewMode = 'list' | 'recommend';
+type ViewMode = 'list' | 'recommend' | 'advanced';
 
 export const RecommendationsTab: React.FC = () => {
   const { user } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [allStocks, setAllStocks] = useState<StockListItem[]>([]);
   const [recommendations, setRecommendations] = useState<StockRecommendation[]>([]);
+  const [advancedRecommendations, setAdvancedRecommendations] = useState<AdvancedRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [topK, setTopK] = useState(5);
   const [customTopK, setCustomTopK] = useState('5');
   const [diversityFactor, setDiversityFactor] = useState(0.1);
+  const [riskProfile, setRiskProfile] = useState<'conservative' | 'balanced' | 'aggressive'>('balanced');
   const [selectedStock, setSelectedStock] = useState<StockRawData | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -116,6 +140,7 @@ export const RecommendationsTab: React.FC = () => {
   const [comparisonData, setComparisonData] = useState<StockRawData[]>([]);
   const itemsPerPage = 12;
 
+  // API 调用函数
   const fetchAllStocks = async () => {
     try {
       setLoading(true);
@@ -177,6 +202,43 @@ export const RecommendationsTab: React.FC = () => {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch recommendations');
       console.error('Error fetching recommendations:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAdvancedRecommendations = async () => {
+    if (!user?.id) {
+      setError('Please login to view advanced recommendations');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(
+        `${API_BASE_URL}/stocks/recommend/v2?user_id=${user.id}&top_k=${topK}&risk_profile=${riskProfile}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch advanced recommendations: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      if (data.ok && data.recommendations) {
+        setAdvancedRecommendations(data.recommendations);
+        // 预加载推荐股票的详细信息
+        data.recommendations.forEach((rec: AdvancedRecommendation) => {
+          fetchStockDetailsForCard(rec.symbol);
+        });
+      } else {
+        throw new Error('Invalid response format');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch advanced recommendations');
+      console.error('Error fetching advanced recommendations:', err);
     } finally {
       setLoading(false);
     }
@@ -256,7 +318,7 @@ export const RecommendationsTab: React.FC = () => {
           dislike: false, 
           favoriteCount: 0, 
           dislikeCount: 0,
-          animating: null
+          animating: null 
         };
         
         if (behaviorType === 'favorite') {
@@ -292,6 +354,8 @@ export const RecommendationsTab: React.FC = () => {
         console.log(`Behavior recorded: ${behaviorType} on ${symbol}`);
         if (behaviorType !== 'click' && viewMode === 'recommend') {
           fetchRecommendations();
+        } else if (behaviorType !== 'click' && viewMode === 'advanced') {
+          fetchAdvancedRecommendations();
         }
       }
 
@@ -367,6 +431,8 @@ export const RecommendationsTab: React.FC = () => {
     setCurrentPage(1);
     if (mode === 'recommend') {
       fetchRecommendations();
+    } else if (mode === 'advanced') {
+      fetchAdvancedRecommendations();
     } else {
       fetchAllStocks();
     }
@@ -380,6 +446,14 @@ export const RecommendationsTab: React.FC = () => {
     }
   };
 
+  const handleDiversityChange = (factor: number) => {
+    setDiversityFactor(factor);
+  };
+
+  const handleRiskProfileChange = (profile: 'conservative' | 'balanced' | 'aggressive') => {
+    setRiskProfile(profile);
+  };
+
   useEffect(() => {
     fetchAllStocks();
   }, []);
@@ -387,29 +461,12 @@ export const RecommendationsTab: React.FC = () => {
   useEffect(() => {
     if (viewMode === 'recommend' && user?.id) {
       fetchRecommendations();
+    } else if (viewMode === 'advanced' && user?.id) {
+      fetchAdvancedRecommendations();
     }
-  }, [user?.id, topK, diversityFactor, viewMode]);
+  }, [user?.id, topK, diversityFactor, riskProfile, viewMode]);
 
-  const filteredStocks = (viewMode === 'list' ? allStocks : recommendations).filter((stock) => {
-    const query = searchQuery.toLowerCase();
-    return (
-      stock.symbol.toLowerCase().includes(query) ||
-      stock.name.toLowerCase().includes(query)
-    );
-  });
-
-  const totalPages = Math.ceil(filteredStocks.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const currentStocks = filteredStocks.slice(startIndex, endIndex);
-
-  const getSimilarityLevel = (similarity: number) => {
-    if (similarity >= 0.9) return { label: 'Excellent Match', color: 'text-green-600 bg-green-50 border-green-200' };
-    if (similarity >= 0.8) return { label: 'Great Match', color: 'text-blue-600 bg-blue-50 border-blue-200' };
-    if (similarity >= 0.7) return { label: 'Good Match', color: 'text-yellow-600 bg-yellow-50 border-yellow-200' };
-    return { label: 'Fair Match', color: 'text-gray-600 bg-gray-50 border-gray-200' };
-  };
-
+  // 工具函数
   const formatMarketCap = (marketCap?: number) => {
     if (!marketCap) return 'N/A';
     if (marketCap >= 1e12) return `$${(marketCap / 1e12).toFixed(2)}T`;
@@ -435,172 +492,37 @@ export const RecommendationsTab: React.FC = () => {
     return colors[sector] || 'bg-gray-100 text-gray-800';
   };
 
-  const renderStockCard = (stock: StockListItem | StockRecommendation) => {
-    const isRecommendation = 'similarity' in stock;
-    const matchLevel = isRecommendation ? getSimilarityLevel((stock as StockRecommendation).similarity) : null;
-    const details = stockDetails[stock.symbol];
-    const isLoading = loadingStocks.has(stock.symbol);
-    const interactions = userInteractions[stock.symbol] || { 
-      favorite: false, 
-      dislike: false, 
-      favoriteCount: 0, 
-      dislikeCount: 0,
-      animating: null 
-    };
-    const isInComparison = comparisonList.includes(stock.symbol);
-
-    return (
-      <div
-        key={stock.symbol}
-        className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-xl hover:border-blue-300 transition-all duration-300 cursor-pointer group"
-        onClick={() => handleStockClick(stock.symbol, stock.sector)}
-        onMouseEnter={() => fetchStockDetailsForCard(stock.symbol)}
-      >
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center space-x-2 mb-1">
-              <h3 className="text-xl font-bold text-gray-900 truncate">{stock.symbol}</h3>
-              {isRecommendation && matchLevel && (
-                <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs border ${matchLevel.color}`}>
-                  <Star className="h-3 w-3" />
-                  <span>{Math.round((stock as StockRecommendation).similarity * 100)}%</span>
-                </div>
-              )}
-            </div>
-            <p className="text-sm text-gray-600 line-clamp-2 mb-2">{stock.name}</p>
-            <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getSectorColor(stock.sector)}`}>
-              {stock.sector}
-            </div>
-          </div>
-        </div>
-
-        {details && (
-          <div className="space-y-3 mt-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              {details.basic_info?.market_cap && (
-                <div className="flex items-center space-x-1">
-                  <DollarSign className="h-4 w-4 text-green-600" />
-                  <span className="font-medium">{formatMarketCap(details.basic_info.market_cap)}</span>
-                </div>
-              )}
-              {details.financials?.valuation_metrics?.trailing_pe && (
-                <div className="flex items-center space-x-1">
-                  <Target className="h-4 w-4 text-blue-600" />
-                  <span>P/E: {details.financials.valuation_metrics.trailing_pe.toFixed(1)}</span>
-                </div>
-              )}
-              {details.financials?.dividend_info?.dividend_yield && details.financials.dividend_info.dividend_yield > 0 && (
-                <div className="flex items-center space-x-1">
-                  <TrendingUp className="h-4 w-4 text-yellow-600" />
-                  <span>Div: {(details.financials.dividend_info.dividend_yield * 100).toFixed(2)}%</span>
-                </div>
-              )}
-              {details.historical_data?.volatility_30d && (
-                <div className="flex items-center space-x-1">
-                  <Zap className="h-4 w-4 text-red-600" />
-                  <span>Vol: {(details.historical_data.volatility_30d * 100).toFixed(1)}%</span>
-                </div>
-              )}
-            </div>
-
-            {details.historical_data?.momentum_1m && (
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">1M Momentum</span>
-                <span className={`text-sm font-medium ${details.historical_data.momentum_1m > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {(details.historical_data.momentum_1m * 100).toFixed(1)}%
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {isLoading && (
-          <div className="flex justify-center mt-4">
-            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-          </div>
-        )}
-
-        <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
-          <div className="flex items-center space-x-2 text-xs text-gray-500">
-            <Eye className="h-3 w-3" />
-            <span>Click for details</span>
-          </div>
-          <div className="flex items-center space-x-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleComparison(stock.symbol);
-              }}
-              className={`p-1.5 rounded-lg transition-all duration-300 ${
-                isInComparison 
-                  ? 'text-blue-600 bg-blue-50 scale-110' 
-                  : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
-              }`}
-              title={isInComparison ? "Remove from comparison" : "Add to comparison"}
-            >
-              <Scale className={`h-4 w-4 transition-transform ${
-                isInComparison ? 'scale-110' : 'group-hover:scale-105'
-              }`} />
-            </button>
-            
-            {/* 喜欢按钮 */}
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleUserBehavior(stock.symbol, 'favorite', stock.sector);
-                }}
-                className={`p-1.5 rounded-lg transition-all duration-300 group/fav ${
-                  interactions.favorite 
-                    ? 'text-green-600 bg-green-50' 
-                    : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
-                } ${interactions.animating === 'favorite' ? 'animate-pulse scale-125' : ''}`}
-                title="Like this stock"
-              >
-                <Heart 
-                  className={`h-4 w-4 transition-all ${
-                    interactions.favorite ? 'fill-current' : 'group-hover/fav:scale-110'
-                  }`} 
-                />
-              </button>
-              {interactions.favoriteCount > 0 && (
-                <div className="absolute -top-2 -right-2 bg-green-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center animate-bounce">
-                  {interactions.favoriteCount}
-                </div>
-              )}
-            </div>
-
-            {/* 不喜欢按钮 */}
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleUserBehavior(stock.symbol, 'dislike', stock.sector);
-                }}
-                className={`p-1.5 rounded-lg transition-all duration-300 group/dislike ${
-                  interactions.dislike 
-                    ? 'text-red-600 bg-red-50' 
-                    : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
-                } ${interactions.animating === 'dislike' ? 'animate-pulse scale-125' : ''}`}
-                title="Dislike this stock"
-              >
-                <ThumbsDown 
-                  className={`h-4 w-4 transition-all ${
-                    interactions.dislike ? 'fill-current' : 'group-hover/dislike:scale-110'
-                  }`} 
-                />
-              </button>
-              {interactions.dislikeCount > 0 && (
-                <div className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center animate-bounce">
-                  {interactions.dislikeCount}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  const getSimilarityLevel = (similarity: number) => {
+    if (similarity >= 0.9) return { label: 'Excellent Match', color: 'text-green-600 bg-green-50 border-green-200' };
+    if (similarity >= 0.8) return { label: 'Great Match', color: 'text-blue-600 bg-blue-50 border-blue-200' };
+    if (similarity >= 0.7) return { label: 'Good Match', color: 'text-yellow-600 bg-yellow-50 border-yellow-200' };
+    return { label: 'Fair Match', color: 'text-gray-600 bg-gray-50 border-gray-200' };
   };
+
+  // 过滤和分页逻辑
+  const filteredStocks = (() => {
+    if (viewMode === 'list') return allStocks;
+    if (viewMode === 'recommend') return recommendations;
+    if (viewMode === 'advanced') return advancedRecommendations.map(rec => ({
+      symbol: rec.symbol,
+      name: rec.name,
+      sector: rec.sector,
+      industry: rec.industry,
+      updated_at: new Date().toISOString()
+    }));
+    return [];
+  })().filter((stock) => {
+    const query = searchQuery.toLowerCase();
+    return (
+      stock.symbol.toLowerCase().includes(query) ||
+      stock.name.toLowerCase().includes(query)
+    );
+  });
+
+  const totalPages = Math.ceil(filteredStocks.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentStocks = filteredStocks.slice(startIndex, endIndex);
 
   // 骨架屏组件
   const SkeletonCard = () => (
@@ -633,15 +555,20 @@ export const RecommendationsTab: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {/* 头部控制面板 */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-gray-900 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            {viewMode === 'list' ? 'Stock Universe' : 'Personalized Recommendations'}
+            {viewMode === 'list' ? 'Stock Universe' : 
+             viewMode === 'recommend' ? 'Personalized Recommendations' : 
+             'Advanced Recommendations'}
           </h2>
           <p className="text-gray-600 mt-1">
             {viewMode === 'list' 
               ? 'Browse all available stocks and discover investment opportunities' 
-              : 'Stocks tailored to your investment preferences and behavior'
+              : viewMode === 'recommend'
+              ? 'Stocks tailored to your investment preferences and behavior'
+              : 'Multi-objective optimized recommendations with risk adjustment'
             }
           </p>
         </div>
@@ -670,44 +597,18 @@ export const RecommendationsTab: React.FC = () => {
               <Sparkles className="h-4 w-4" />
               <span>Recommended</span>
             </button>
+            <button
+              onClick={() => handleModeSwitch('advanced')}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all ${
+                viewMode === 'advanced'
+                  ? 'bg-white text-purple-600 shadow-sm ring-2 ring-purple-200'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Crown className="h-4 w-4" />
+              <span>Advanced</span>
+            </button>
           </div>
-
-          {viewMode === 'recommend' && (
-            <>
-              <div className="flex items-center space-x-2 bg-white border border-gray-300 rounded-lg px-3 py-2">
-                <label className="text-sm text-gray-600 font-medium">Top K:</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={customTopK}
-                  onChange={(e) => handleTopKChange(e.target.value)}
-                  className="w-16 px-2 py-1 border-0 bg-transparent focus:ring-0 text-center font-medium"
-                />
-                <span className="text-xs text-gray-500">max 20</span>
-              </div>
-              <div className="flex items-center space-x-2 bg-white border border-gray-300 rounded-lg px-3 py-2">
-                <label className="text-sm text-gray-600 font-medium">Diversity:</label>
-                <select
-                  value={diversityFactor}
-                  onChange={(e) => setDiversityFactor(Number(e.target.value))}
-                  className="border-0 bg-transparent focus:ring-0 font-medium"
-                >
-                  <option value={0}>None</option>
-                  <option value={0.1}>Low</option>
-                  <option value={0.2}>Medium</option>
-                  <option value={0.3}>High</option>
-                </select>
-              </div>
-              <button
-                onClick={fetchRecommendations}
-                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl"
-              >
-                <RefreshCw className="h-4 w-4" />
-                <span>Refresh</span>
-              </button>
-            </>
-          )}
         </div>
       </div>
 
@@ -733,7 +634,7 @@ export const RecommendationsTab: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-3">
             {comparisonList.map(symbol => {
-              const stock = [...allStocks, ...recommendations].find(s => s.symbol === symbol);
+              const stock = [...allStocks, ...recommendations, ...advancedRecommendations].find(s => s.symbol === symbol);
               const details = stockDetails[symbol];
               return (
                 <div key={symbol} className="bg-white px-4 py-3 rounded-lg border-2 border-blue-300 shadow-sm flex items-center justify-between min-w-[200px] group hover:border-blue-400 transition-all">
@@ -769,7 +670,7 @@ export const RecommendationsTab: React.FC = () => {
                 {loadingDetail ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <BarChart3 className="h-4 w-4" />
+                  <Scale className="h-4 w-4" />
                 )}
                 <span>
                   {loadingDetail ? 'Loading...' : 'Analyze Comparison'}
@@ -780,6 +681,7 @@ export const RecommendationsTab: React.FC = () => {
         </div>
       )}
 
+      {/* 搜索栏 */}
       <div className="flex items-center space-x-3 bg-white border border-gray-300 rounded-xl p-3 shadow-sm">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -799,89 +701,77 @@ export const RecommendationsTab: React.FC = () => {
         </div>
       </div>
 
+      {/* 错误显示 */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
           <p className="text-red-800 font-medium">{error}</p>
         </div>
       )}
 
-      {viewMode === 'recommend' && recommendations.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl p-4 shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm opacity-90">Total Recommendations</p>
-                <p className="text-2xl font-bold">{recommendations.length}</p>
-              </div>
-              <Star className="h-8 w-8 opacity-90" />
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl p-4 shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm opacity-90">Avg Match Score</p>
-                <p className="text-2xl font-bold">
-                  {recommendations.length > 0
-                    ? Math.round((recommendations.reduce((sum, r) => sum + r.similarity, 0) / recommendations.length) * 100)
-                    : 0}%
-                </p>
-              </div>
-              <TrendingUp className="h-8 w-8 opacity-90" />
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl p-4 shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm opacity-90">Unique Sectors</p>
-                <p className="text-2xl font-bold">
-                  {new Set(recommendations.map(r => r.sector)).size}
-                </p>
-              </div>
-              <BarChart3 className="h-8 w-8 opacity-90" />
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl p-4 shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm opacity-90">Avg Volatility</p>
-                <p className="text-2xl font-bold">
-                  {recommendations.length > 0
-                    ? `${(recommendations.reduce((sum, r) => {
-                        const details = stockDetails[r.symbol];
-                        return sum + (details?.historical_data?.volatility_30d || 0);
-                      }, 0) / recommendations.length * 100).toFixed(1)}%`
-                    : '0%'}
-                </p>
-              </div>
-              <Zap className="h-8 w-8 opacity-90" />
-            </div>
-          </div>
-        </div>
+      {/* 内容区域 */}
+      {viewMode === 'advanced' && (
+        <AdvancedRecommendations
+          recommendations={advancedRecommendations}
+          stockDetails={stockDetails}
+          loadingStocks={loadingStocks}
+          userInteractions={userInteractions}
+          comparisonList={comparisonList}
+          topK={topK}
+          customTopK={customTopK}
+          riskProfile={riskProfile}
+          onStockClick={handleStockClick}
+          onFetchStockDetails={fetchStockDetailsForCard}
+          onToggleComparison={toggleComparison}
+          onUserBehavior={handleUserBehavior}
+          onTopKChange={handleTopKChange}
+          onRiskProfileChange={handleRiskProfileChange}
+          onRefresh={fetchAdvancedRecommendations}
+          formatMarketCap={formatMarketCap}
+          getSectorColor={getSectorColor}
+        />
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {currentStocks.map(renderStockCard)}
-      </div>
-
-      {filteredStocks.length === 0 && !loading && (
-        <div className="text-center py-12">
-          <div className="bg-gray-50 rounded-xl p-8 max-w-md mx-auto">
-            <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500 text-lg">
-              {searchQuery
-                ? 'No stocks found matching your search.'
-                : viewMode === 'recommend'
-                ? 'No recommendations available. Please ensure your profile is set up.'
-                : 'No stocks available.'}
-            </p>
-          </div>
-        </div>
+      {viewMode === 'recommend' && (
+        <BasicRecommendations
+          recommendations={recommendations}
+          stockDetails={stockDetails}
+          loadingStocks={loadingStocks}
+          userInteractions={userInteractions}
+          comparisonList={comparisonList}
+          topK={topK}
+          customTopK={customTopK}
+          diversityFactor={diversityFactor}
+          onStockClick={handleStockClick}
+          onFetchStockDetails={fetchStockDetailsForCard}
+          onToggleComparison={toggleComparison}
+          onUserBehavior={handleUserBehavior}
+          onTopKChange={handleTopKChange}
+          onDiversityChange={handleDiversityChange}
+          onRefresh={fetchRecommendations}
+          formatMarketCap={formatMarketCap}
+          getSectorColor={getSectorColor}
+          getSimilarityLevel={getSimilarityLevel}
+        />
       )}
 
-      {totalPages > 1 && (
+      {viewMode === 'list' && (
+        <StockList
+          stocks={currentStocks}
+          stockDetails={stockDetails}
+          loadingStocks={loadingStocks}
+          userInteractions={userInteractions}
+          comparisonList={comparisonList}
+          onStockClick={handleStockClick}
+          onFetchStockDetails={fetchStockDetailsForCard}
+          onToggleComparison={toggleComparison}
+          onUserBehavior={handleUserBehavior}
+          formatMarketCap={formatMarketCap}
+          getSectorColor={getSectorColor}
+        />
+      )}
+
+      {/* 分页 */}
+      {viewMode === 'list' && totalPages > 1 && (
         <div className="flex items-center justify-center space-x-4">
           <button
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
@@ -905,6 +795,25 @@ export const RecommendationsTab: React.FC = () => {
         </div>
       )}
 
+      {/* 空状态 */}
+      {filteredStocks.length === 0 && !loading && (
+        <div className="text-center py-12">
+          <div className="bg-gray-50 rounded-xl p-8 max-w-md mx-auto">
+            <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-500 text-lg">
+              {searchQuery
+                ? 'No stocks found matching your search.'
+                : viewMode === 'recommend'
+                ? 'No recommendations available. Please ensure your profile is set up.'
+                : viewMode === 'advanced'
+                ? 'No advanced recommendations available. Please ensure your profile is set up.'
+                : 'No stocks available.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* 加载状态 */}
       {loadingDetail && !showComparisonModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
           <div className="bg-white rounded-xl p-6 flex items-center space-x-3">
@@ -914,6 +823,7 @@ export const RecommendationsTab: React.FC = () => {
         </div>
       )}
 
+      {/* 模态框 */}
       {selectedStock && (
         <StockDetailModal
           rawData={selectedStock}
@@ -921,7 +831,6 @@ export const RecommendationsTab: React.FC = () => {
         />
       )}
 
-      {/* 对比分析模态框 */}
       {showComparisonModal && (
         <ComparisonModal
           stocks={comparisonData}
