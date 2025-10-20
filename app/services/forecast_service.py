@@ -7,7 +7,6 @@ import math, statistics, re
 from app.model.models import ForecastResult, ForecastPoint
 from app.forecasters.base import Forecaster
 
-# ===== 原有可选模型 =====
 try:
     from app.forecasters.arima_forecaster import ArimaForecaster
 except Exception:
@@ -27,7 +26,6 @@ except Exception:
 
 from app.forecasters.stacked_forecaster import StackedForecaster
 
-# ===== NEW: 引入三种深度学习预测器（之前我们给你的实现）=====
 try:
     from app.forecasters.seq2seq_forecaster import Seq2SeqForecaster
 except Exception:

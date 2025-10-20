@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Sequence, Optional, Tuple
 from dataclasses import dataclass
 import math, random
-
+import torch  # noqa: F401
+import numpy as np  # noqa: F401
 class LstmForecaster:
     """
     轻量 LSTM 预测器（增强版）
@@ -18,11 +19,11 @@ class LstmForecaster:
         self,
         model=None,
         device: str = "cpu",
-        lookback: int = 32,        # 滑窗长度（历史步）
+        lookback: int = 64,        # 滑窗长度（历史步）
         hidden_size: int = 64,
         num_layers: int = 2,
         dropout: float = 0.1,
-        epochs: int = 80,          # 小训练轮次
+        epochs: int = 100,          # 小训练轮次
         lr: float = 1e-3,
         train_split: float = 0.85, # 训练/验证划分（顺序切分）
         patience: int = 10,        # 早停
@@ -31,12 +32,11 @@ class LstmForecaster:
         log_price: bool = True,    # 在 log(price) 域拟合（更稳定）
         anchor_weight: float = 0.3,# 预测路径 anchor 平滑权重（0~1）
         seed: int = 42,            # 随机种子
+        model_cache_dir: str = "./models/lstm",   # ← NEW
+        cache_key: Optional[str] = None,          # ← NEW (比如 'AAPL')
+        auto_load: bool = True,                   # ← NEW
+        auto_save: bool = True,                   # ← NEW
     ):
-        try:
-            import torch  # noqa: F401
-            import numpy as np  # noqa: F401
-        except Exception as e:
-            raise RuntimeError("PyTorch 或 numpy 未安装，请先 `pip install torch numpy`") from e
 
         self.model = model
         self.device = device
@@ -54,18 +54,26 @@ class LstmForecaster:
         self.anchor_weight = float(anchor_weight)
         self.seed = int(seed)
 
+        self.model_cache_dir = model_cache_dir
+        self.cache_key = cache_key
+        self.auto_load = bool(auto_load)
+        self.auto_save = bool(auto_save)
+
     # ---------------------- public ----------------------
 
     def predict(self, closes: Sequence[float], horizon: int) -> Tuple[float, Optional[float]]:
-        """
-        输入：closes 升序价格序列；horizon 未来天数
-        输出：(预测价, 置信度[0-1]或None)
-        """
         import numpy as np
         closes = np.asarray(closes, dtype=float)
         closes = closes[np.isfinite(closes)]
         if closes.size < 5:
             return float(closes[-1]), None
+
+        # 优先使用缓存的最佳模型（如果配置开启且 cache_key 存在）
+        if self.auto_load and self.cache_key and self.model is None:
+            loaded = self._try_load_best()
+            if loaded is not None:
+                model, scaler, use_log = loaded
+                return self._roll_forecast(model, scaler, closes, horizon, use_log=use_log)
 
         # 数据不足 → 均值回归兜底
         if self.model is None and closes.size < max(self.min_train_points, self.lookback + 5):
@@ -75,10 +83,17 @@ class LstmForecaster:
         if self.model is not None:
             return self._predict_with_model(self.model, closes, horizon)
 
-        # 轻训练路径
-        model, scaler, use_log = self._fit_quick(closes)
+        # 轻训练路径（会在内部维护 best_state）
+        model, scaler, use_log, best_metric = self._fit_quick(closes, return_metric=True)  # ← 改动点
         if model is None:
             return self._mean_revert_baseline(closes, horizon)
+
+        # 训练完成后再保险保存一次最佳（避免最后一次未触发 on-improve 保存）
+        if self.auto_save and self.cache_key:
+            try:
+                self._save_best(model, scaler, use_log, best_metric)
+            except Exception as _:
+                pass
 
         yhat, conf = self._roll_forecast(model, scaler, closes, horizon, use_log=use_log)
         return yhat, conf
@@ -147,24 +162,16 @@ class LstmForecaster:
             return np.log(arr), True
         return arr, False
 
-    def _fit_quick(self, closes):
-        """
-        即时小模型轻训练（仅本序列使用），参考你 notebook 的：
-          - MinMax 缩放（在 log 域可选）
-          - 按 block_len（timestamp）分段训练
-          - 早停 + grad clip
-        """
+    # ===== 修改 _fit_quick：在最优时即时落盘；并返回 best_metric =====
+    def _fit_quick(self, closes, return_metric: bool = False):
         import numpy as np
         import torch
         import torch.nn as nn
-        from torch.utils.data import TensorDataset, DataLoader
 
         self._seed_everything()
-
-        # 可能的 log 域
         series, use_log = self._maybe_log(closes)
 
-        # 训练/验证划分
+        # 划分
         n = series.size
         split = int(n * self.train_split)
         train_arr = series[:max(split, self.lookback + 1)]
@@ -173,56 +180,36 @@ class LstmForecaster:
         # 缩放（只用训练集拟合）
         fwd, inv = self._scale_fit(train_arr)
         train_scaled = fwd(train_arr)
-
         Xtr, ytr = self._prepare_supervised(train_scaled)
         if Xtr.shape[0] < 10:
-            return None, None, use_log
+            return (None, None, use_log, float("inf")) if return_metric else (None, None, use_log)
 
-        # 验证集（可为空）
         if val_arr.size > self.lookback + 1:
             val_scaled = fwd(val_arr)
             Xval, yval = self._prepare_supervised(val_scaled)
         else:
             Xval = yval = None
 
-        # 张量与加载器（保序训练：用 block_len 切块模拟时间块训练）
         device = torch.device(self.device)
-
         Xtr_t = torch.tensor(Xtr, dtype=torch.float32, device=device)
         ytr_t = torch.tensor(ytr, dtype=torch.float32, device=device)
-
-        # 自定义“时间块”索引（不打乱，仿照 notebook 的 timestamp 循环）
-        blocks = []
-        step = max(1, self.block_len)
-        for k in range(0, Xtr_t.size(0), step):
-            end = min(k + step, Xtr_t.size(0))
-            blocks.append((k, end))
-
         if Xval is not None:
             Xval_t = torch.tensor(Xval, dtype=torch.float32, device=device)
             yval_t = torch.tensor(yval, dtype=torch.float32, device=device)
 
-        # 小 LSTM
         class _TinyLSTM(nn.Module):
             def __init__(self, in_dim=1, hidden=self.hidden_size, layers=self.num_layers, drop=self.dropout):
                 super().__init__()
                 self.lstm = nn.LSTM(
-                    input_size=in_dim,
-                    hidden_size=hidden,
-                    num_layers=layers,
-                    batch_first=True,
+                    input_size=in_dim, hidden_size=hidden, num_layers=layers, batch_first=True,
                     dropout=(drop if layers > 1 else 0.0),
                 )
-                self.head = nn.Sequential(
-                    nn.Linear(hidden, hidden),
-                    nn.ReLU(),
-                    nn.Linear(hidden, 1),
-                )
+                self.head = nn.Sequential(nn.Linear(hidden, hidden), nn.ReLU(), nn.Linear(hidden, 1))
 
             def forward(self, x, h=None):
-                out, h = self.lstm(x, h)     # (B,T,H)
-                last = out[:, -1, :]         # (B,H)
-                y = self.head(last)          # (B,1)
+                out, h = self.lstm(x, h)
+                last = out[:, -1, :]
+                y = self.head(last)
                 return y, h
 
         model = _TinyLSTM().to(device)
@@ -233,22 +220,26 @@ class LstmForecaster:
         best_val = float("inf")
         wait = 0
 
-        # 轻训练（按时间块循环）
+        # 时间块
+        blocks = []
+        step = max(1, self.block_len)
+        for k in range(0, Xtr_t.size(0), step):
+            end = min(k + step, Xtr_t.size(0))
+            blocks.append((k, end))
+
         for _ in range(self.epochs):
             model.train()
             running = 0.0
             h_state = None
             for (s, e) in blocks:
-                xb = Xtr_t[s:e]  # (B,T,1)
+                xb = Xtr_t[s:e]
                 yb = ytr_t[s:e]
                 optim.zero_grad()
                 pred, h_state = model(xb, h_state)
-                # 截断隐藏状态的梯度（避免长依赖爆炸）
                 if isinstance(h_state, tuple):
                     h_state = tuple(v.detach() for v in h_state)
                 else:
                     h_state = h_state.detach() if h_state is not None else None
-
                 loss = loss_fn(pred, yb)
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), max_norm=2.0)
@@ -257,7 +248,6 @@ class LstmForecaster:
 
             train_loss = running / Xtr_t.size(0)
 
-            # 验证
             if Xval is not None:
                 model.eval()
                 with torch.no_grad():
@@ -267,11 +257,24 @@ class LstmForecaster:
             else:
                 metric = train_loss
 
-            # 早停
+            # 早停 + 保存最佳
             if metric < best_val - 1e-6:
                 best_val = metric
                 best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
                 wait = 0
+
+                # ←← NEW: 一旦提升，就立刻保存为最佳（需要 cache_key + auto_save）
+                if self.auto_save and self.cache_key:
+                    class _Scaler:
+                        def __init__(self, fwd, inv):
+                            self.fwd = fwd;
+                            self.inv = inv
+
+                    try:
+                        self._save_best(model, _Scaler(fwd, inv), use_log, best_val)
+                    except Exception:
+                        pass
+
             else:
                 wait += 1
                 if wait >= self.patience:
@@ -280,13 +283,12 @@ class LstmForecaster:
         if best_state is not None:
             model.load_state_dict(best_state)
 
-        # 返回模型 + 反缩放函数 + 是否 log 域
         class _Scaler:
             def __init__(self, fwd, inv):
-                self.fwd = fwd
+                self.fwd = fwd;
                 self.inv = inv
 
-        return model, _Scaler(fwd, inv), use_log
+        return (model, _Scaler(fwd, inv), use_log, best_val) if return_metric else (model, _Scaler(fwd, inv), use_log)
 
     def _anchor(self, arr, weight: float):
         """与 notebook 一致的 anchor 平滑（指数滑动）"""
@@ -372,6 +374,117 @@ class LstmForecaster:
         scaler.fwd, scaler.inv = fwd, inv
 
         return self._roll_forecast(model, scaler, series, horizon, use_log=use_log)
+
+    # ===== 新增：保存/加载工具函数（放在类内部任意位置，建议放到 internals 区域）=====
+    def _cache_dir(self) -> Optional[str]:
+        if not self.cache_key:
+            return None
+        import os
+        d = os.path.join(self.model_cache_dir, str(self.cache_key).upper())
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _save_best(self, model, scaler, use_log: bool, best_metric: float):
+        """
+        保存最佳：state_dict + meta.json + scaler.npz
+        """
+        import os, json, torch, numpy as np, time
+        d = self._cache_dir()
+        if not d:
+            return
+        # 1) 权重
+        torch.save(model.state_dict(), os.path.join(d, "model.pt"))
+        # 2) scaler（从 inv 推回 a_min/scale）
+        a_min = float(scaler.inv(0.0))
+        a_max = float(scaler.inv(1.0))
+        scale = float(max(1e-8, a_max - a_min))
+        np.savez(os.path.join(d, "scaler.npz"), a_min=a_min, scale=scale)
+        # 3) meta
+        meta = dict(
+            name=self.name,
+            device=self.device,
+            lookback=self.lookback,
+            hidden_size=self.hidden_size,
+            num_layers=self.num_layers,
+            dropout=self.dropout,
+            epochs=self.epochs,
+            lr=self.lr,
+            train_split=self.train_split,
+            patience=self.patience,
+            min_train_points=self.min_train_points,
+            block_len=self.block_len,
+            log_price=self.log_price,
+            anchor_weight=self.anchor_weight,
+            seed=self.seed,
+            use_log=bool(use_log),
+            best_metric=float(best_metric),
+            saved_at=int(time.time()),
+        )
+        with open(os.path.join(d, "meta.json"), "w") as f:
+            json.dump(meta, f, indent=2)
+
+    def _try_load_best(self):
+        """
+        尝试从缓存目录加载：返回 (model, scaler, use_log) 或 None
+        """
+        import os, json, torch, numpy as np, torch.nn as nn
+
+        d = self._cache_dir()
+        if not d:
+            return None
+        pt = os.path.join(d, "model.pt")
+        meta_f = os.path.join(d, "meta.json")
+        sc_f = os.path.join(d, "scaler.npz")
+        if not (os.path.exists(pt) and os.path.exists(meta_f) and os.path.exists(sc_f)):
+            return None
+
+        with open(meta_f, "r") as f:
+            meta = json.load(f)
+
+        # 构建与训练时一致的小 LSTM 结构
+        class _TinyLSTM(nn.Module):
+            def __init__(self, in_dim=1, hidden=meta["hidden_size"], layers=meta["num_layers"], drop=meta["dropout"]):
+                super().__init__()
+                self.lstm = nn.LSTM(
+                    input_size=in_dim,
+                    hidden_size=hidden,
+                    num_layers=layers,
+                    batch_first=True,
+                    dropout=(drop if layers > 1 else 0.0),
+                )
+                self.head = nn.Sequential(
+                    nn.Linear(hidden, hidden),
+                    nn.ReLU(),
+                    nn.Linear(hidden, 1),
+                )
+
+            def forward(self, x, h=None):
+                out, h = self.lstm(x, h)
+                last = out[:, -1, :]
+                y = self.head(last)
+                return y, h
+
+        device = self.device
+        model = _TinyLSTM().to(device)
+        state = torch.load(pt, map_location=device)
+        model.load_state_dict(state)
+        model.eval()
+
+        npz = np.load(sc_f)
+        a_min = float(npz["a_min"])
+        scale = float(npz["scale"])
+
+        def _fwd(x):
+            return (x - a_min) / max(1e-8, scale)
+
+        def _inv(x):
+            return x * max(1e-8, scale) + a_min
+
+        scaler = type("TmpScaler", (), {})()
+        scaler.fwd, scaler.inv = _fwd, _inv
+
+        use_log = bool(meta.get("use_log", meta.get("log_price", True)))
+        return model, scaler, use_log
 
     # ---------------------- confidence ----------------------
 
