@@ -1,118 +1,61 @@
-// // src/utils/forecastMapper.ts
-// import { BackendForecastResult } from "../api/forecast";
-
-// const PERIOD_LABEL: Record<number, string> = {
-//   7: "1 Week",
-//   30: "1 Month",
-//   90: "3 Months",
-//   180: "6 Months",
-// };
-
-// export function toPredictionData(
-//   b: BackendForecastResult,
-//   companyName = ""
-// ) {
-//   const current = b.current_price;
-//   const preds = b.predictions
-//     .sort((a, b) => a.horizon_days - b.horizon_days)
-//     .map(p => {
-//       const change = +(p.predicted - current).toFixed(2);
-//       const changePercent = +(((p.predicted - current) / current) * 100).toFixed(2);
-//       return {
-//         period: PERIOD_LABEL[p.horizon_days] || `${p.horizon_days} Days`,
-//         predictedPrice: +p.predicted.toFixed(2),
-//         confidence: p.confidence ?? 0.5,
-//         change,
-//         changePercent
-//       };
-//     });
-
-//   // 这些可先用简单规则占位
-//   const risk = Math.max(...preds.map(p => Math.abs(p.changePercent))) > 15 ? "High"
-//              : Math.max(...preds.map(p => Math.abs(p.changePercent))) > 7  ? "Medium"
-//              : "Low";
-//   const accuracy = 0.75; // 先写死/或从后端 method 给出基准
-
-//   return {
-//     symbol: b.ticker,
-//     companyName,
-//     currentPrice: +current.toFixed(2),
-//     predictions: preds,
-//     risk,
-//     accuracy
-//   };
-// }
-
-
 // src/utils/forecastMapper.ts
-export interface BackendForecastPoint {
-  horizon_days: number;
-  predicted: number;
-  confidence?: number;
-}
-export interface BackendForecastResult {
-  ticker: string;
-  method: string;
-  generated_at: string;
-  current_price: number;
-  predictions: BackendForecastPoint[];
-}
+import type { ForecastResult } from "../api/forecast";
 
-// 你的 UI 结构（和 PredictTab.tsx 中一致）
-export interface PredictionRow {
+export type OnePeriod = {
   period: string;
   predictedPrice: number;
   confidence: number;
   change: number;
   changePercent: number;
-}
-export interface PredictionData {
+};
+
+export type PredictionData = {
   symbol: string;
   companyName: string;
   currentPrice: number;
-  predictions: PredictionRow[];
-  risk: 'Low' | 'Medium' | 'High';
+  predictions: OnePeriod[];
+  risk: "Low" | "Medium" | "High";
   accuracy: number;
-}
-
-const PERIOD_LABEL: Record<number, string> = {
-  7: '1 Week',
-  30: '1 Month',
-  90: '3 Months',
-  180: '6 Months',
+  lastUpdated: string;
 };
 
-export function toPredictionData(
-  backend: BackendForecastResult,
-  companyName = ''
-): PredictionData {
-  const current = backend.current_price;
+function labelOf(days: number): string {
+  if (days === 7) return "1 Week";
+  if (days === 30) return "1 Month";
+  if (days === 90) return "3 Months";
+  if (days === 180) return "6 Months";
+  return `${days} Days`;
+}
 
-  const rows: PredictionRow[] = backend.predictions
-    .slice() // 避免原地排序
+export function toPredictionData(resp: ForecastResult): PredictionData {
+  const curr = resp.current_price;
+  const preds = (resp.predictions ?? [])
+    .slice()
     .sort((a, b) => a.horizon_days - b.horizon_days)
-    .map(p => {
-      const change = +(p.predicted - current).toFixed(2);
-      const changePercent = +(((p.predicted - current) / current) * 100).toFixed(2);
+    .map((p) => {
+      const predicted = p.predicted ?? curr;
+      const change = predicted - curr;
+      const changePercent = curr ? (change / curr) * 100 : 0;
+      const conf = typeof p.confidence === "number" ? Math.max(0, Math.min(1, p.confidence)) : 0.7;
       return {
-        period: PERIOD_LABEL[p.horizon_days] || `${p.horizon_days} Days`,
-        predictedPrice: +p.predicted.toFixed(2),
-        confidence: p.confidence ?? 0.5,
+        period: labelOf(p.horizon_days),
+        predictedPrice: predicted,
+        confidence: conf,
         change,
         changePercent,
       };
     });
 
-  const maxAbsPct = rows.reduce((m, r) => Math.max(m, Math.abs(r.changePercent)), 0);
-  const risk: PredictionData['risk'] =
-    maxAbsPct > 15 ? 'High' : maxAbsPct > 7 ? 'Medium' : 'Low';
+  const avgConf = preds.length ? preds.reduce((s, x) => s + x.confidence, 0) / preds.length : 0.7;
+  const risk: "Low" | "Medium" | "High" = avgConf >= 0.8 ? "Low" : avgConf < 0.6 ? "High" : "Medium";
 
   return {
-    symbol: backend.ticker,
-    companyName,
-    currentPrice: +current.toFixed(2),
-    predictions: rows,
+    symbol: resp.ticker,
+    companyName: resp.company_name || resp.ticker, // 👈 后端名优先，缺失兜底 ticker
+    currentPrice: curr,
+    predictions: preds,
     risk,
-    accuracy: 0.75, // 占位，可按模型评估替换
+    accuracy: avgConf,
+    lastUpdated: resp.generated_at,
   };
 }
