@@ -1,11 +1,13 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Sequence, Optional, Tuple
+from typing import List, Sequence, Optional, Tuple, Dict
 import math, statistics, re
 
 from app.model.models import ForecastResult, ForecastPoint
 from app.forecasters.base import Forecaster
+
+# ===== 原有可选模型 =====
 try:
     from app.forecasters.arima_forecaster import ArimaForecaster
 except Exception:
@@ -23,6 +25,22 @@ try:
 except Exception:
     LstmForecaster = None
 
+from app.forecasters.stacked_forecaster import StackedForecaster
+
+# ===== NEW: 引入三种深度学习预测器（之前我们给你的实现）=====
+try:
+    from app.forecasters.seq2seq_forecaster import Seq2SeqForecaster
+except Exception:
+    Seq2SeqForecaster = None
+try:
+    from app.forecasters.dilated_cnn_forecaster import DilatedCNNForecaster
+except Exception:
+    DilatedCNNForecaster = None
+try:
+    from app.forecasters.transformer_forecaster import TransformerForecaster
+except Exception:
+    TransformerForecaster = None
+
 
 class PriceProviderPort:
     async def get_recent_closes(self, ticker: str, lookback_days: int = 252) -> List[float]:
@@ -33,9 +51,32 @@ class PriceProviderPort:
 class ForecastConfig:
     lookback_days: int = 252
     ma_window: int = 20
-    auto_min_len_ml: int = 120    # 长度不足时不选 ML（lgbm/lstm）
+    auto_min_len_ml: int = 120    # 长度不足时不选 ML（lgbm/lstm/深度模型）
     auto_min_len_prophet: int = 80
     auto_min_len_arima: int = 30
+
+
+# ===== NEW: 轻量适配器，把我们写的 PyTorch 预测器包装为 Forecaster 接口 =====
+class _DLAdapter(Forecaster):
+    """
+    适配我们提供的 PyTorch 预测器类（有 fit/predict 且一次性输出多步序列）。
+    predict() 返回 (最后一步 yhat, conf)，其中 conf 先返回 None（由上层基于波动合成）。
+    """
+    def __init__(self, ctor):
+        """
+        ctor: 一个无参的可调用，返回某个我们实现的 Forecaster 实例
+              例如 lambda: Seq2SeqForecaster(device="cpu", lookback=64, epochs=40)
+        """
+        self._ctor = ctor
+
+    def predict(self, closes: Sequence[float], horizon_days: int) -> Tuple[float, Optional[float]]:
+        model = self._ctor()
+        # 训练用全序列，预测用末尾 lookback 段
+        model.fit(closes, horizon=horizon_days)
+        preds = model.predict(closes[-model.cfg.lookback:], horizon=horizon_days)
+        # 取多步预测的最后一个点作为 yhat
+        yhat = float(preds[-1]) if preds else float(closes[-1])
+        return yhat, None  # 置信度交由上层统一计算/合成
 
 
 class ForecastService:
@@ -43,16 +84,45 @@ class ForecastService:
         self,
         price_provider: Optional[PriceProviderPort] = None,
         cfg: Optional[ForecastConfig] = None,
-        forecasters: Optional[dict[str, Forecaster]] = None
+        forecasters: Optional[Dict[str, Forecaster]] = None
     ):
         self.price_provider = price_provider
         self.cfg = cfg or ForecastConfig()
 
-        default_registry: dict[str, Forecaster] = {}
-        if ArimaForecaster:   default_registry["arima"]   = ArimaForecaster(order=(1,1,1))
-        if ProphetForecaster: default_registry["prophet"] = ProphetForecaster()
-        if LgbmForecaster:    default_registry["lgbm"]    = LgbmForecaster(booster=None)
-        if LstmForecaster:    default_registry["lstm"]    = LstmForecaster(model=None)
+        default_registry: Dict[str, Forecaster] = {}
+
+        if ArimaForecaster:
+            default_registry["arima"] = ArimaForecaster(order=(1, 1, 1))
+        if ProphetForecaster:
+            default_registry["prophet"] = ProphetForecaster()
+        if LgbmForecaster:
+            default_registry["lgbm"] = LgbmForecaster(booster=None)
+        if LstmForecaster:
+            default_registry["lstm"] = LstmForecaster(model=None)
+
+        # ===== NEW: 注册三种新深度学习模型（用适配器包裹）=====
+        if Seq2SeqForecaster:
+            default_registry["seq2seq"] = _DLAdapter(
+                lambda: Seq2SeqForecaster(device="cpu", lookback=64, epochs=40, batch_size=64)
+            )
+        if DilatedCNNForecaster:
+            default_registry["dilated_cnn"] = _DLAdapter(
+                lambda: DilatedCNNForecaster(device="cpu", lookback=64, epochs=30, batch_size=128)
+            )
+        if TransformerForecaster:
+            default_registry["transformer"] = _DLAdapter(
+                lambda: TransformerForecaster(device="cpu", lookback=96, epochs=40, batch_size=64)
+            )
+
+        # 新增堆叠（保持你原配置）
+        default_registry["stacked"] = StackedForecaster(
+            backtest_len=80,
+            min_train_points=120,
+            allow_prophet=False,  # 安装好了 Prophet 再开
+            verbose=False
+        )
+
+        # 合并外部传入的 forecasters（可覆盖默认）
         self.forecasters = {**default_registry, **(forecasters or {})}
 
     # --------------------- public API ---------------------
@@ -122,7 +192,7 @@ class ForecastService:
     def _resolve_methods(self, method: str, series_len: int, vol_daily: float) -> List[str]:
         """
         返回用于预测的模型列表：
-        - 'arima' / 'prophet' / 'lgbm' / 'lstm' / 'ma' / 'naive-drift'
+        - 'arima' / 'prophet' / 'lgbm' / 'lstm' / 'seq2seq' / 'dilated_cnn' / 'transformer' / 'ma' / 'naive-drift'
         - 'auto'：根据长度与波动选择
         - 'ensemble(a,b,c)'：集合多个模型（存在即用，不存在跳过；全不存在则回退 'naive-drift'）
         """
@@ -133,9 +203,8 @@ class ForecastService:
             usable = [x for x in items if (x in self.forecasters or x in ("ma", "naive-drift"))]
             return usable or ["naive-drift"]
 
-        # auto：简单规则，可按需扩展
+        # auto：规则可按需扩展
         if method == "auto":
-            # 典型选择：数据很短用 naive/ma；中等长度优先 arima/prophet；长序列可尝试 lgbm/lstm
             candidates: List[str] = []
             if series_len >= self.cfg.auto_min_len_arima and "arima" in self.forecasters:
                 candidates.append("arima")
@@ -145,6 +214,14 @@ class ForecastService:
                 candidates.append("lgbm")
             if series_len >= self.cfg.auto_min_len_ml and "lstm" in self.forecasters:
                 candidates.append("lstm")
+            # ===== UPDATED: 把新深度模型纳入 auto 选择 =====
+            if series_len >= self.cfg.auto_min_len_ml and "seq2seq" in self.forecasters:
+                candidates.append("seq2seq")
+            if series_len >= self.cfg.auto_min_len_ml and "dilated_cnn" in self.forecasters:
+                candidates.append("dilated_cnn")
+            if series_len >= self.cfg.auto_min_len_ml and "transformer" in self.forecasters:
+                candidates.append("transformer")
+
             # 波动太高时，附加一个均值回归的 'ma' 作为保险
             if vol_daily > 0.03:
                 candidates.append("ma")

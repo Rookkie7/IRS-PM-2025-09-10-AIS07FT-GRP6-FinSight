@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from app.adapters.db.database_client import get_mongo_db
 from app.services.forecast_service import ForecastService
 from app.deps import get_forecast_service
+from app.model.models import ForecastResult
+
 import math
 import asyncio
 
@@ -13,6 +15,22 @@ router = APIRouter(prefix="/forecast", tags=["forecast"])
 
 MethodType = Literal["arima", "prophet", "lgbm", "lstm", "persistence", "naive-drift", "ma"]
 METHOD_REGEX = r"^(arima|prophet|lgbm|lstm|ma|naive-drift|auto|ensemble\([a-zA-Z,\-\s]+\))$"
+
+def _parse_horizons(s: Optional[str]) -> Optional[List[int]]:
+    if not s:
+        return None
+    out: List[int] = []
+    for x in s.split(","):
+        x = x.strip()
+        if not x:
+            continue
+        try:
+            v = int(x)
+            if v > 0:
+                out.append(v)
+        except ValueError:
+            continue
+    return out or None
 
 
 def sanitize_for_json(obj: Any) -> Any:
@@ -128,10 +146,24 @@ async def forecast_query(
     hs = [int(x) for x in horizons.split(",") if x.strip().isdigit()] if horizons else None
     try:
         res = await svc.forecast(ticker=ticker, horizon_days=horizon_days, horizons=hs, method=method)
+        # ---- 👇 合并公司名 ----
+        try:
+            db = get_mongo_db()
+            doc = await db["stocks"].find_one(
+                {"symbol": ticker.upper()},
+                {"_id": 0, "basic_info.name": 1}
+            )
+            company_name = (doc or {}).get("basic_info", {}).get("name")
+            # res 可能是 pydantic 模型或 dict；都处理一下
+            if hasattr(res, "company_name"):
+                res.company_name = company_name
+            elif isinstance(res, dict):
+                res["company_name"] = company_name
+        except Exception:
+            pass
         return sanitize_for_json(res.dict() if hasattr(res, "dict") else res)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/stock")
 async def get_stock_info(ticker: str):
@@ -216,28 +248,25 @@ async def forecast_batch(
         "fail": results_fail,
     }
 
-@router.get("/{ticker}")
+@router.get("/{ticker}", response_model=ForecastResult)
 async def forecast_ticker(
     ticker: str,
-    horizon_days: int = 7,
-    horizons: Optional[str] = Query(None, description="逗号分隔，如 7,30,90,180"),
-    method: MethodType = Query(  # ← 新增：预测方法
+    horizon_days: int = Query(7, ge=1, le=365, description="若不传 horizons 时的默认单周期"),
+    horizons: Optional[str] = Query(
+        None,
+        description="逗号分隔的多个周期，如 '7,30,90,180'；传了就忽略 horizon_days"
+    ),
+    method: str = Query(
         "naive-drift",
-        description="预测方法：arima / naive-drift / ma"
+        description=(
+            "预测方法：'naive-drift' | 'ma' | 'arima' | 'prophet' | 'lgbm' | 'lstm' | "
+            "'seq2seq' | 'dilated_cnn' | 'transformer' | 'stacked' | 'auto' | "
+            "集合形式 'ensemble(a,b,c)'（存在即用，缺失跳过）"
+        ),
     ),
     svc: ForecastService = Depends(get_forecast_service),
 ):
-    hs: Optional[List[int]] = None
-    if horizons:
-        hs = [int(x) for x in horizons.split(",") if x.strip().isdigit()]
-
-    res = await svc.forecast(
-        ticker,
-        horizon_days=horizon_days,
-        horizons=hs,
-        method=method,   # ← 传递给服务层
-    )
-    return res.dict()
-
+    hs = _parse_horizons(horizons) or [horizon_days]
+    return await svc.forecast(ticker, horizon_days=horizon_days, horizons=hs, method=method)
 
 

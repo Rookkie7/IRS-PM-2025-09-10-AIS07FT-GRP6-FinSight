@@ -207,4 +207,4 @@ class ForecastResult(BaseModel):
     generated_at: datetime
     current_price: float
     predictions: List[ForecastPoint]
-    
+    company_name: Optional[str] = Field(default=None, description="Company name for the ticker")
