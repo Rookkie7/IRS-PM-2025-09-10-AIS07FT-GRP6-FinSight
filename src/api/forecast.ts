@@ -159,3 +159,11 @@ export async function fetchStockInfo(ticker: string): Promise<StockInfoResponse>
   if (!res.ok) throw new Error(`stock ${res.status}: ${await res.text()}`);
   return res.json();
 }
+
+export async function fetchLast7Prices(ticker: string): Promise<Array<{date: string; close: number}>> {
+  // 若你的后端有全局前缀，请改成 /api/v1/forecast/prices7
+  const res = await fetch(`/forecast/prices7?ticker=${encodeURIComponent(ticker)}`);
+  if (!res.ok) throw new Error(`prices7 http ${res.status}`);
+  const json = await res.json();
+  return Array.isArray(json?.prices) ? json.prices : [];
+}

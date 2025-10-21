@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { TrendingUp, TrendingDown, Calendar, Target, AlertCircle, BarChart } from "lucide-react";
-import { fetchForecastBatch } from "../../api/forecast";
+import { fetchForecastBatch, fetchLast7Prices } from "../../api/forecast";
 import { toPredictionData, type PredictionData } from "../../utils/forecastMapper";
 import {
   ResponsiveContainer,
@@ -71,24 +71,32 @@ function sortByDateAsc<T extends { date: string | Date }>(arr: T[]) {
 }
 
 // Best-effort builder
-function buildTrendSeries(stock: PredictionData | null) {
+function buildTrendSeries(
+  stock: PredictionData | null,
+  extHistory7?: Array<{date: string; close: number}>
+) {
   if (!stock) return [] as { label: string; price: number; isFuture: boolean }[];
 
-  // 1) history (prefer backend-provided)
+  // 1) history：优先用 extHistory7；其次再看 stock.history7 / history / recentPrices
   let hist: { date: string | Date; price: number }[] = [];
-  const anyHist = (stock as any).history7 || (stock as any).history || (stock as any).recentPrices;
-  if (Array.isArray(anyHist) && anyHist.length) {
-    const sorted = sortByDateAsc(
-      anyHist.map((x: any) => ({ date: x.date ?? x.ts ?? x.t ?? x[0], price: x.price ?? x.v ?? x[1] }))
-    );
+  if (Array.isArray(extHistory7) && extHistory7.length) {
+    const sorted = sortByDateAsc(extHistory7.map((x) => ({ date: x.date, price: x.close })));
     hist = sorted.slice(-7);
   } else {
-    const today = new Date();
-    const cur = stock.currentPrice ?? 0;
-    hist = Array.from({ length: 7 }, (_, i) => ({ date: addDays(today, i - 7), price: cur }));
+    const anyHist = (stock as any).history7 || (stock as any).history || (stock as any).recentPrices;
+    if (Array.isArray(anyHist) && anyHist.length) {
+      const sorted = sortByDateAsc(
+        anyHist.map((x: any) => ({ date: x.date ?? x.ts ?? x.t ?? x[0], price: x.close ?? x.price ?? x.v ?? x[1] }))
+      );
+      hist = sorted.slice(-7);
+    } else {
+      const today = new Date();
+      const cur = stock.currentPrice ?? 0;
+      hist = Array.from({ length: 7 }, (_, i) => ({ date: addDays(today, i - 7), price: cur }));
+    }
   }
 
-  // 2) future (prefer backend-provided)
+  // 2) future（保持你原逻辑）
   let fwd: { date: string | Date; price: number }[] = [];
   const anyFwd = (stock as any).forecastPath7 || (stock as any).forecast || (stock as any).future;
   if (Array.isArray(anyFwd) && anyFwd.length) {
@@ -107,6 +115,15 @@ function buildTrendSeries(stock: PredictionData | null) {
       return { date: addDays(today, i + 1), price };
     });
   }
+  if (Array.isArray(extHistory7) && extHistory7.length) {
+    const sorted = sortByDateAsc(
+      extHistory7.map((x: any) => ({
+        date: x.date,
+        price: x.close ?? x.Close ?? x.price,   // ← 兼容 Close/price
+      }))
+    );
+    hist = sorted.slice(-7);
+  }
 
   const merged = [...hist, { date: new Date(), price: stock.currentPrice }, ...fwd];
   const todayStr = fmt(new Date());
@@ -116,6 +133,7 @@ function buildTrendSeries(stock: PredictionData | null) {
     isFuture: fmt(new Date(pt.date)) > todayStr,
   }));
 }
+
 
 const METHOD_OPTIONS = [
   "lstm",
@@ -134,17 +152,23 @@ export const PredictTab: React.FC = () => {
   const [list, setList] = useState<PredictionData[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState<string>(symbols[0]);
   const [selectedStock, setSelectedStock] = useState<PredictionData | null>(null);
-  const [selectedPeriod, setSelectedPeriod] = useState<string>("1 Week");
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("1 Day");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
 
   const [method, setMethod] = useState<string>("lstm");
   const [limit, setLimit] = useState<number>(10);
+  const [hist7Map, setHist7Map] = useState<Record<string, {date: string; close: number}[]>>({});
 
-  // const HORIZONS = [7, 30, 90, 180]; 
-  const HORIZONS = [1,2,3,4,5,6,7, 30]; 
-  const cacheKey = useMemo(() => makeKey(method, limit, HORIZONS), [method, limit]);
+
+  // const HORIZONS = [7, 30, 90, 180]; // ← 只要 7/30/90/180
+  const HORIZONS = [1,2,3,4,5,6,7, 30]; // ← 只要 7/30/90/180
+  // const cacheKey = useMemo(() => makeKey(method, limit, HORIZONS), [method, limit]);
+  const cacheKey = useMemo(
+  () => `${method}|${limit}|${HORIZONS.join(",")}|${symbols.join(",")}`,
+  [method, limit]
+);
 
   const [refreshNonce, setRefreshNonce] = useState(0);
 
@@ -173,7 +197,10 @@ export const PredictTab: React.FC = () => {
       if (match) {
         const periods = match.predictions.map((p) => p.period);
         if (!periods.includes(selectedPeriod)) {
-          setSelectedPeriod(match.predictions[0]?.period ?? "1 Week");
+          const day = match.predictions.find(p => /1\s*day/i.test(p.period))?.period
+              ?? match.predictions[0]?.period
+              ?? "1 Day";
+          setSelectedPeriod(day);
         }
       }
       setLoading(false);
@@ -212,10 +239,10 @@ export const PredictTab: React.FC = () => {
       setSelectedStock(match ?? null);
 
       if (match) {
-        const periods = match.predictions.map((p) => p.period);
-        if (!periods.includes(selectedPeriod)) {
-          setSelectedPeriod(match.predictions[0]?.period ?? "1 Week");
-        }
+        const day = match.predictions.find(p => /1\s*day/i.test(p.period))?.period
+                  ?? match.predictions[0]?.period
+                  ?? "1 Day";
+        setSelectedPeriod(day);
       }
     } catch (e: any) {
       if (alive) setErr(e.message || "Load failed");
@@ -233,12 +260,27 @@ export const PredictTab: React.FC = () => {
   const currentPrediction =
     selectedStock?.predictions.find((p) => p.period === selectedPeriod) ||
     selectedStock?.predictions[0] || {
-      period: "1 Week",
+      period: "1 Day",
       predictedPrice: selectedStock?.currentPrice ?? 0,
       confidence: 0.7,
       change: 0,
       changePercent: 0,
     };
+    useEffect(() => {
+      let alive = true;
+      (async () => {
+        if (!selectedSymbol) return;
+        try {
+          const prices = await fetchLast7Prices(selectedSymbol);
+          if (!alive) return;
+          setHist7Map((m) => ({ ...m, [selectedSymbol]: prices }));
+        } catch (e) {
+          // 静默失败即可，图表会用 fallback
+          // console.warn("fetchLast7Prices failed", e);
+        }
+      })();
+      return () => { alive = false; };
+    }, [selectedSymbol]);
 
   const getRiskColor = (risk: string) => {
     switch (risk) {
@@ -253,7 +295,12 @@ export const PredictTab: React.FC = () => {
     }
   };
 
-  const trendData = useMemo(() => buildTrendSeries(selectedStock), [selectedStock]);
+  const trendData = useMemo(() => {
+    const sym = selectedStock?.symbol || selectedSymbol;  // ← 兜底用 selectedSymbol
+    const ext = sym ? hist7Map[sym] : undefined;
+    return buildTrendSeries(selectedStock, ext);
+  }, [selectedStock, selectedSymbol, hist7Map]);
+
 
   return (
     <div className="p-6 space-y-6">
@@ -269,15 +316,17 @@ export const PredictTab: React.FC = () => {
           {/* Symbol */}
           <select
             value={selectedSymbol}
-            onChange={(e) => setSelectedSymbol(e.target.value)}
+              onChange={(e) => {
+                const sym = e.target.value;
+                setSelectedSymbol(sym);
+                const match = list.find((x) => x.symbol === sym);
+                if (match) setSelectedStock(match);
+              }}
             className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            {(list.length
-              ? list.map((x) => ({ sym: x.symbol, name: x.companyName }))
-              : symbols.map((s, i) => ({ sym: s, name: companyNames[i] }))
-            ).map((item) => (
-              <option key={item.sym} value={item.sym}>
-                {item.sym} - {item.name}
+            {(list.length ? list.map((x) => x.symbol) : symbols).map((sym) => (
+              <option key={sym} value={sym}>
+                {sym}
               </option>
             ))}
           </select>
@@ -447,6 +496,31 @@ export const PredictTab: React.FC = () => {
                   </div>
                   <p className="text-xs text-gray-600 mt-2">Based on historical patterns, market sentiment, and technical indicators</p>
                 </div>
+                {/* Trend Chart */}
+                <div className="bg-white border border-gray-200 rounded-lg p-6">
+                  <h4 className="font-semibold text-gray-900 mb-4">Trend (Past 7d → Next 7d)</h4>
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={trendData} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                        <YAxis tick={{ fontSize: 12 }} domain={["dataMin", "dataMax"]} />
+                        <Tooltip formatter={(v: any) => [`$${Number(v).toFixed(2)}`, "Price"]} labelClassName="text-sm" />
+                        <Line type="monotone" dataKey="price" strokeWidth={2} dot={false} />
+                        <ReferenceLine
+                          x={fmt(new Date())}
+                          stroke="#9ca3af"
+                          strokeDasharray="4 4"
+                          label={{ value: "Today", position: "top", fill: "#6b7280" }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Tip: If your backend returns <code>history7</code> and <code>forecastPath7</code>, the chart will use them. Otherwise it falls back to a flat
+                    history and a linear path to the 1-week prediction.
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -479,31 +553,7 @@ export const PredictTab: React.FC = () => {
             </div>
           </div>
 
-          {/* Trend Chart */}
-          <div className="bg-white border border-gray-200 rounded-lg p-6">
-            <h4 className="font-semibold text-gray-900 mb-4">Trend (Past 7d → Next 7d)</h4>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trendData} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} domain={["dataMin", "dataMax"]} />
-                  <Tooltip formatter={(v: any) => [`$${Number(v).toFixed(2)}`, "Price"]} labelClassName="text-sm" />
-                  <Line type="monotone" dataKey="price" strokeWidth={2} dot={false} />
-                  <ReferenceLine
-                    x={fmt(new Date())}
-                    stroke="#9ca3af"
-                    strokeDasharray="4 4"
-                    label={{ value: "Today", position: "top", fill: "#6b7280" }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Tip: If your backend returns <code>history7</code> and <code>forecastPath7</code>, the chart will use them. Otherwise it falls back to a flat
-              history and a linear path to the 1-week prediction.
-            </p>
-          </div>
+
         </>
       )}
     </div>
