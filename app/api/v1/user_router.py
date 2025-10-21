@@ -1,5 +1,9 @@
+from __future__ import annotations
+from app.domain.models import UserProfile, BehaviorEvent
+from datetime import datetime, timezone
 from pydantic import BaseModel
 from requests.sessions import Session
+from typing import Literal
 from fastapi.security import OAuth2PasswordBearer
 from app.model.models import UserPublic
 from app.services.auth_service import AuthService
@@ -10,7 +14,215 @@ from pymongo.database import Database
 from app.adapters.db.database_client import get_postgres_session, get_mongo_db
 from app.services.user_service import UserService
 from app.services.stock_service import StockService
+from app.services.news_service import NewsService
+
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+DEBUG_TOGGLE_VERSION = "toggle-v1.0-2025-10-21-16:30"
+import logging
+log = logging.getLogger("app.user_router")
+
+
+def get_service() -> NewsService:
+    from app.main import svc
+    return svc
+
+
+@router.post("/init_profile")
+def init_profile(user_id: str = "demo", 
+                 reset: bool = Query(False, description="是否重置已有画像为零向量"),
+                 service: NewsService = Depends(get_service)) -> UserProfile:
+    prof = service.prof_repo.get_or_create(user_id)
+    if reset:
+        dim = getattr(service.embedder, "dim", len(prof.vector) or 32)
+        prof.vector = [0.0]*dim
+        service.prof_repo.save(prof)
+    return prof
+
+@router.post("/event")
+def add_event(ev: BehaviorEvent, service: NewsService = Depends(get_service)):
+    prof = service.record_event_and_update_profile(ev)
+    return {"ok": True, "user_id": ev.user_id, "profile_normed_head": prof.vector[:5]}
+
+class ClickEvent(BaseModel):
+    user_id: str = "demo"
+    news_id: str
+    dwell_ms: int = 0
+    liked: bool = False
+    bookmarked: bool = False
+
+class LikeEvent(BaseModel):
+    user_id: str = "demo"
+    news_id: str
+
+class BookmarkEvent(BaseModel):
+    user_id: str = "demo"
+    news_id: str
+
+@router.post("/event/click")
+def user_click(ev: ClickEvent, service: NewsService = Depends(get_service)):
+    # 取新闻向量（语义 + 画像）
+    doc = service.news_repo.get(ev.news_id)
+    if not doc:
+        raise HTTPException(404, "news not found")
+
+    news_sem = list(getattr(doc, "vector", []) or [])
+    news_prof = list(getattr(doc, "vector_prof_20d", []) or [])
+
+    # 简单权重：点击=1，>10s=1.5，like/bookmark 各+0.5
+    w = 1.0
+    if ev.dwell_ms >= 10000: w += 0.5
+    if ev.liked: w += 0.5
+    if ev.bookmarked: w += 0.5
+
+    # 更新用户画像
+    service.prof_repo.update_user_vectors_from_event(
+        user_id=ev.user_id,
+        news_sem=news_sem,
+        news_prof=news_prof,
+        weight=w,
+    )
+
+    service.ev_repo.add(BehaviorEvent(
+        user_id=ev.user_id,
+        news_id=ev.news_id,
+        type="click",
+        ts=datetime.now(timezone.utc),
+        dwell_ms=ev.dwell_ms,
+        liked=ev.liked,
+        bookmarked=ev.bookmarked,
+    ))
+    return {"ok": True, "weight": w}
+
+# @router.post("/event/like")
+# def user_like(ev: LikeEvent, service: NewsService = Depends(get_service)):
+#     doc = service.news_repo.get(ev.news_id)
+#     if not doc:
+#         raise HTTPException(404, "news not found")
+#     news_sem = list(getattr(doc, "vector", []) or [])
+#     news_prof = list(getattr(doc, "vector_prof_20d", []) or [])
+
+#     # like 权重偏低，聚合“认同”信号
+#     w = 0.7
+#     service.prof_repo.update_user_vectors_from_event(
+#         user_id=ev.user_id, news_sem=news_sem, news_prof=news_prof, weight=w,
+#     )
+#     # ✅ 新增：把 like 写入事件仓库（用于“已看过”过滤）
+#     from datetime import datetime, timezone
+#     service.ev_repo.add(BehaviorEvent(
+#         user_id=ev.user_id, news_id=ev.news_id, type="like",
+#         ts=datetime.now(timezone.utc)
+#     ))
+#     return {"ok": True, "weight": w}
+
+# @router.post("/event/bookmark")
+# def user_bookmark(ev: BookmarkEvent, service: NewsService = Depends(get_service)):
+#     doc = service.news_repo.get(ev.news_id)
+#     if not doc:
+#         raise HTTPException(404, "news not found")
+#     news_sem = list(getattr(doc, "vector", []) or [])
+#     news_prof = list(getattr(doc, "vector_prof_20d", []) or [])
+
+#     # bookmark 权重略高，表示“强偏好/留存”
+#     w = 1.2
+#     service.prof_repo.update_user_vectors_from_event(
+#         user_id=ev.user_id, news_sem=news_sem, news_prof=news_prof, weight=w,
+#     )
+#     # ✅ 新增：把 bookmark 写入事件仓库（用于“已看过”过滤）
+#     from datetime import datetime, timezone
+#     service.ev_repo.add(BehaviorEvent(
+#         user_id=ev.user_id, news_id=ev.news_id, type="bookmark",
+#         ts=datetime.now(timezone.utc)
+#     ))
+#     return {"ok": True, "weight": w}
+
+class LikeBookmarkPayload(BaseModel):
+    user_id: str
+    news_id: str
+    op: Literal["add", "remove"] = "add"
+
+# === 在现有的 user_like / user_bookmark 位置，替换为以下两个处理器 ===
+
+@router.post("/event/like")
+def user_like(payload: LikeBookmarkPayload, service: NewsService = Depends(get_service)):
+    """
+    点赞：op=add 正向更新；op=remove 固定δ回退。
+    - 事件类型写入为 type='like'
+    - 去重/跳过：仅在 type='like' 上判断
+    """
+    ev_type = "like"
+    doc = service.news_repo.get(payload.news_id)
+    if not doc:
+        raise HTTPException(404, "news not found")
+
+    # dedup：仅针对 like 类型
+    if payload.op == "add":
+        if service.ev_repo.exists_by_type(user_id=payload.user_id, news_id=payload.news_id, type=ev_type):
+            # 已经点过赞，则跳过（但仍返回 200）
+            service.ev_repo.add({
+                "user_id": payload.user_id, "news_id": payload.news_id,
+                "type": ev_type, "op": "add", "ts": datetime.now(timezone.utc),
+                "skipped": True
+            })
+            return {"ok": True, "op": "add", "skipped": True}
+
+        # 画像：20d add
+        news_prof = list(getattr(doc, "vector_prof_20d", []) or [])
+        service.prof_repo.update_prof20_add(user_id=payload.user_id, news_prof20=news_prof, event_type=ev_type)
+
+    else:  # remove
+        # 画像：20d remove（只减命中维度固定δ）
+        news_prof = list(getattr(doc, "vector_prof_20d", []) or [])
+        service.prof_repo.update_prof20_remove(user_id=payload.user_id, news_prof20=news_prof, event_type=ev_type)
+
+    # 事件：add/remove 都写入
+    service.ev_repo.add({
+        "user_id": payload.user_id,
+        "news_id": payload.news_id,
+        "type": ev_type,
+        "op": payload.op,
+        "ts": datetime.now(timezone.utc),
+    })
+    return {"ok": True, "op": payload.op, "skipped": False}
+
+
+@router.post("/event/bookmark")
+def user_bookmark(payload: LikeBookmarkPayload, service: NewsService = Depends(get_service)):
+    """
+    收藏：op=add 正向更新；op=remove 固定δ回退。
+    - 行为类型在事件表用 type='save'（与既有枚举兼容）
+    - 去重/跳过：仅在 type='save' 上判断
+    """
+    ev_type = "save"  # 注意：事件类型是 save，不是 bookmark
+    doc = service.news_repo.get(payload.news_id)
+    if not doc:
+        raise HTTPException(404, "news not found")
+
+    if payload.op == "add":
+        if service.ev_repo.exists_by_type(user_id=payload.user_id, news_id=payload.news_id, type=ev_type):
+            service.ev_repo.add({
+                "user_id": payload.user_id, "news_id": payload.news_id,
+                "type": ev_type, "op": "add", "ts": datetime.now(timezone.utc),
+                "skipped": True
+            })
+            return {"ok": True, "op": "add", "skipped": True}
+
+        news_prof = list(getattr(doc, "vector_prof_20d", []) or [])
+        service.prof_repo.update_prof20_add(user_id=payload.user_id, news_prof20=news_prof, event_type=ev_type)
+
+    else:  # remove
+        news_prof = list(getattr(doc, "vector_prof_20d", []) or [])
+        service.prof_repo.update_prof20_remove(user_id=payload.user_id, news_prof20=news_prof, event_type=ev_type)
+
+    service.ev_repo.add({
+        "user_id": payload.user_id,
+        "news_id": payload.news_id,
+        "type": ev_type,
+        "op": payload.op,
+        "ts": datetime.now(timezone.utc),
+    })
+    return {"ok": True, "op": payload.op, "skipped": False}
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 

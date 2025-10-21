@@ -1,22 +1,22 @@
+from app.config import settings
 from sqlalchemy.orm.session import Session
 from fastapi import Depends
 from pymongo.database import Database
 from app.adapters.db.database_client import get_postgres_session,get_mongo_db
 from app.adapters.db.user_repo import UserRepo
+from app.adapters.db.news_repo import NewsRepo
 from app.adapters.llm.openai_llm import OpenAICompatLLM
+from app.adapters.vector.mongo_vector_index import MongoVectorIndex
+from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
 from app.ports.storage import UserRepoPort
 from app.services.auth_service import AuthService
 from app.services.user_service import UserService
 from app.services.stock_service import StockService
-# from config import settings
-from app.adapters.db.news_repo import NewsRepo
-from app.adapters.vector.mongo_vector_index import MongoVectorIndex
-from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
 from app.services.news_service import NewsService
 from app.services.rec_service import RecService
 from app.services.rag_service import RagService
 from app.services.forecast_service import ForecastService
-from app.config import settings
+
 
 def get_query_embedder():
     # You can also use OpenAI Embeddings; here we use the local SB model

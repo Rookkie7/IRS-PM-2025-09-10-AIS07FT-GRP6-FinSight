@@ -19,15 +19,6 @@ dist/
 pip-wheel-metadata/
 .eggs/
 
-# 虚拟环境 / 包管理
-.venv/
-venv/
-env/
-ENV/
-*.env
-*.env.*
-!.env.example
-
 # 测试 / 质量
 .pytest_cache/
 .mypy_cache/
@@ -87,3 +78,5 @@ node_modules/
 # Sentence-Transformers/模型（若你本地落了模型文件）
 models/
 models/**/*
+*.pyc
+*.pem
