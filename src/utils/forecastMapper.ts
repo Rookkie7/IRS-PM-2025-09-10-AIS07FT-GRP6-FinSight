@@ -17,6 +17,7 @@ export type PredictionData = {
   risk: "Low" | "Medium" | "High";
   accuracy: number;
   lastUpdated: string;
+  method: string;
 };
 
 function labelOf(days: number): string {

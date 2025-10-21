@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { TrendingUp, TrendingDown, Calendar, Target, AlertCircle, BarChart } from "lucide-react";
-import { fetchForecast, fetchForecastBatch } from "../../api/forecast";
+import { fetchForecastBatch } from "../../api/forecast";
 import { toPredictionData, type PredictionData } from "../../utils/forecastMapper";
 import {
   ResponsiveContainer,
@@ -25,6 +25,36 @@ function relativeFromNow(iso: string) {
   return `${hr} hours ago`;
 }
 
+// cache
+type BatchKey = string;
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5分钟，你可调
+const batchCache = new Map<BatchKey, { at: number; data: PredictionData[] }>();
+const inFlight = new Map<BatchKey, Promise<PredictionData[]>>();
+
+const makeKey = (method: string, limit: number, horizons: number[]) =>
+  `${method}|${limit}|${horizons.join(",")}`;
+
+// （可选）持久化到 sessionStorage —— 如果不需要就删掉这三段
+const PERSIST_KEY = "predict-batch-cache-v1";
+(function hydrateCacheFromSession() {
+  try {
+    const raw = sessionStorage.getItem(PERSIST_KEY);
+    if (!raw) return;
+    const obj = JSON.parse(raw) as Record<string, { at: number; data: PredictionData[] }>;
+    Object.entries(obj).forEach(([k, v]) => batchCache.set(k, v));
+  } catch {}
+})();
+function persistCacheToSession() {
+  try {
+    const obj: Record<string, { at: number; data: PredictionData[] }> = {};
+    batchCache.forEach((v, k) => (obj[k] = v));
+    sessionStorage.setItem(PERSIST_KEY, JSON.stringify(obj));
+  } catch {}
+}
+
+
+
 // === helpers for chart ===
 function fmt(d: Date) {
   const m = d.getMonth() + 1;
@@ -40,17 +70,11 @@ function sortByDateAsc<T extends { date: string | Date }>(arr: T[]) {
   return [...arr].sort((a, b) => new Date(a.date as any).getTime() - new Date(b.date as any).getTime());
 }
 
-// Best-effort builder: consumes whatever the backend provides
-// Preferred fields (if present on selectedStock):
-//   - history: Array<{ date: string, price: number }>
-//   - history7: Array<{ date: string, price: number }>
-//   - forecastPath7: Array<{ date: string, price: number }>
-//   - forecast: Array<{ date: string, price: number }>
-// Fallbacks: flat 7 historical points at currentPrice + linear 7 future points to 1-week prediction
+// Best-effort builder
 function buildTrendSeries(stock: PredictionData | null) {
   if (!stock) return [] as { label: string; price: number; isFuture: boolean }[];
 
-  // 1) try to read 7 historical points
+  // 1) history (prefer backend-provided)
   let hist: { date: string | Date; price: number }[] = [];
   const anyHist = (stock as any).history7 || (stock as any).history || (stock as any).recentPrices;
   if (Array.isArray(anyHist) && anyHist.length) {
@@ -59,13 +83,12 @@ function buildTrendSeries(stock: PredictionData | null) {
     );
     hist = sorted.slice(-7);
   } else {
-    // fallback: create 7 flat points at current price
     const today = new Date();
     const cur = stock.currentPrice ?? 0;
     hist = Array.from({ length: 7 }, (_, i) => ({ date: addDays(today, i - 7), price: cur }));
   }
 
-  // 2) try to read 7 forward points from backend
+  // 2) future (prefer backend-provided)
   let fwd: { date: string | Date; price: number }[] = [];
   const anyFwd = (stock as any).forecastPath7 || (stock as any).forecast || (stock as any).future;
   if (Array.isArray(anyFwd) && anyFwd.length) {
@@ -74,22 +97,38 @@ function buildTrendSeries(stock: PredictionData | null) {
     );
     fwd = sorted.slice(0, 7);
   } else {
-    // fallback: interpolate from currentPrice to 1-week predictedPrice
     const today = new Date();
     const cur = stock.currentPrice ?? 0;
     const wk = stock.predictions.find((p) => p.period === "1 Week") || stock.predictions[0];
     const target = wk ? wk.predictedPrice : cur;
     fwd = Array.from({ length: 7 }, (_, i) => {
-      const t = (i + 1) / 7; // 1..7
-      const price = cur + (target - cur) * t; // linear path
+      const t = (i + 1) / 7;
+      const price = cur + (target - cur) * t;
       return { date: addDays(today, i + 1), price };
     });
   }
 
   const merged = [...hist, { date: new Date(), price: stock.currentPrice }, ...fwd];
   const todayStr = fmt(new Date());
-  return merged.map((pt) => ({ label: fmt(new Date(pt.date)), price: pt.price, isFuture: fmt(new Date(pt.date)) > todayStr }));
+  return merged.map((pt) => ({
+    label: fmt(new Date(pt.date)),
+    price: pt.price,
+    isFuture: fmt(new Date(pt.date)) > todayStr,
+  }));
 }
+
+const METHOD_OPTIONS = [
+  "lstm",
+  "arima",
+  "prophet",
+  "lgbm",
+  "seq2seq",
+  "dilated_cnn",
+  "transformer",
+  "stacked",
+  "ma",
+  "naive-drift",
+];
 
 export const PredictTab: React.FC = () => {
   const [list, setList] = useState<PredictionData[]>([]);
@@ -99,65 +138,97 @@ export const PredictTab: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+
+  const [method, setMethod] = useState<string>("lstm");
+  const [limit, setLimit] = useState<number>(10);
+
+  // const HORIZONS = [7, 30, 90, 180]; 
+  const HORIZONS = [1,2,3,4,5,6,7, 30]; 
+  const cacheKey = useMemo(() => makeKey(method, limit, HORIZONS), [method, limit]);
+
+  const [refreshNonce, setRefreshNonce] = useState(0);
+
+
   const companyName = useMemo(() => {
     const idx = symbols.indexOf(selectedSymbol);
     return companyNames[idx] ?? selectedSymbol;
   }, [selectedSymbol]);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      setLoading(true);
-      setErr(null);
-      try {
-        const results = await fetchForecastBatch({
-          method: "naive-drift",
-          horizons: [7, 30, 90, 180],
-          limit: 10
-        });
 
-        const items: PredictionData[] = results.map((r: any) => {
+  useEffect(() => {
+  let alive = true;
+  (async () => {
+    setLoading(true);
+    setErr(null);
+
+    // 1) 命中缓存（TTL 内）
+    const cached = batchCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && now - cached.at < CACHE_TTL_MS) {
+      if (!alive) return;
+      setList(cached.data);
+      // 校正选中项
+      const match = cached.data.find((x) => x.symbol === selectedSymbol) ?? cached.data[0] ?? null;
+      setSelectedStock(match ?? null);
+      if (match) {
+        const periods = match.predictions.map((p) => p.period);
+        if (!periods.includes(selectedPeriod)) {
+          setSelectedPeriod(match.predictions[0]?.period ?? "1 Week");
+        }
+      }
+      setLoading(false);
+      return;
+    }
+
+    // 2) 并发去重：复用在途请求
+    let p = inFlight.get(cacheKey);
+    if (!p) {
+      p = (async () => {
+        const lim = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 10;
+        const raw = await fetchForecastBatch({ method, horizons: HORIZONS, limit: lim });
+        const items: PredictionData[] = raw.map((r: any) => {
           const mapped = toPredictionData(r);
           return {
             ...mapped,
+            method: r.method ?? method,
             lastUpdated: relativeFromNow(mapped.lastUpdated),
           } as PredictionData;
         });
-
-        if (!alive) return;
-        setList(items);
-
-        const match = items.find((x) => x.symbol === selectedSymbol) ?? items[0] ?? null;
-        setSelectedStock(match ?? null);
-
-        if (match) {
-          const periods = match.predictions.map((p) => p.period);
-          if (!periods.includes(selectedPeriod)) {
-            setSelectedPeriod(match.predictions[0]?.period ?? "1 Week");
-          }
-        }
-      } catch (e: any) {
-        if (alive) setErr(e.message || "Load failed");
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!list.length) return;
-    const match = list.find((x) => x.symbol === selectedSymbol) ?? null;
-    setSelectedStock(match);
-    if (match) {
-      const periods = match.predictions.map((p) => p.period);
-      if (!periods.includes(selectedPeriod)) {
-        setSelectedPeriod(match.predictions[0]?.period ?? "1 Week");
-      }
+        // 写缓存
+        batchCache.set(cacheKey, { at: Date.now(), data: items });
+        // （可选）持久化
+        persistCacheToSession();
+        return items;
+      })();
+      inFlight.set(cacheKey, p);
     }
-  }, [selectedSymbol, list]);
+
+    try {
+      const items = await p;
+      if (!alive) return;
+      setList(items);
+
+      const match = items.find((x) => x.symbol === selectedSymbol) ?? items[0] ?? null;
+      setSelectedStock(match ?? null);
+
+      if (match) {
+        const periods = match.predictions.map((p) => p.period);
+        if (!periods.includes(selectedPeriod)) {
+          setSelectedPeriod(match.predictions[0]?.period ?? "1 Week");
+        }
+      }
+    } catch (e: any) {
+      if (alive) setErr(e.message || "Load failed");
+    } finally {
+      inFlight.delete(cacheKey);
+      if (alive) setLoading(false);
+    }
+  })();
+  return () => {
+    alive = false;
+  };
+// 关键依赖：method/limit 改变；手动刷新时 refreshNonce 变化绕过缓存
+}, [method, limit, refreshNonce]);
 
   const currentPrediction =
     selectedStock?.predictions.find((p) => p.period === selectedPeriod) ||
@@ -187,25 +258,71 @@ export const PredictTab: React.FC = () => {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Stock Predictions</h2>
           <p className="text-gray-600">AI-powered price forecasting with confidence intervals</p>
         </div>
-        <div className="flex items-center space-x-4">
+
+        {/* Controls: symbol, method, limit */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Symbol */}
           <select
             value={selectedSymbol}
             onChange={(e) => setSelectedSymbol(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
-            {(list.length ? list.map((x) => ({ sym: x.symbol, name: x.companyName })) : symbols.map((s, i) => ({ sym: s, name: companyNames[i] }))).map(
-              (item) => (
-                <option key={item.sym} value={item.sym}>
-                  {item.sym} - {item.name}
-                </option>
-              )
-            )}
+            {(list.length
+              ? list.map((x) => ({ sym: x.symbol, name: x.companyName }))
+              : symbols.map((s, i) => ({ sym: s, name: companyNames[i] }))
+            ).map((item) => (
+              <option key={item.sym} value={item.sym}>
+                {item.sym} - {item.name}
+              </option>
+            ))}
           </select>
+
+          {/* Method */}
+          <select
+            value={method}
+            onChange={(e) => setMethod(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            title="Forecast method"
+          >
+            {METHOD_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+
+          {/* Limit */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600">Limit</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              step={1}
+              value={limit}
+              onChange={(e) => {
+                const v = parseInt(e.target.value || "1", 10);
+                setLimit(Number.isFinite(v) ? Math.max(1, v) : 1);
+              }}
+              className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+            {/* ✅ 新增：刷新按钮 */}
+          <button
+            onClick={() => {
+              batchCache.delete(cacheKey); // 清除当前请求的缓存
+              setRefreshNonce((n) => n + 1); // 触发刷新
+            }}
+            className="px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 text-sm text-gray-700"
+            title="Refresh cached results"
+          >
+            🔄 Refresh
+          </button>
         </div>
       </div>
 
@@ -264,6 +381,9 @@ export const PredictTab: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900">{selectedStock.symbol}</h3>
+                  <span className="px-2 py-0.5 text-xs rounded-full border border-blue-200 bg-blue-50 text-blue-700">
+                    Method: {selectedStock.method ?? "unknown"}
+                  </span>
                   <p className="text-gray-600">{selectedStock.companyName}</p>
                 </div>
               </div>
@@ -359,7 +479,7 @@ export const PredictTab: React.FC = () => {
             </div>
           </div>
 
-          {/* ==== Trend Chart (Past 7d → Future 7d) ==== */}
+          {/* Trend Chart */}
           <div className="bg-white border border-gray-200 rounded-lg p-6">
             <h4 className="font-semibold text-gray-900 mb-4">Trend (Past 7d → Next 7d)</h4>
             <div className="h-64">
@@ -369,10 +489,13 @@ export const PredictTab: React.FC = () => {
                   <XAxis dataKey="label" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} domain={["dataMin", "dataMax"]} />
                   <Tooltip formatter={(v: any) => [`$${Number(v).toFixed(2)}`, "Price"]} labelClassName="text-sm" />
-                  {/* Future segment shown with dashed line by mapping className at the point-level */}
                   <Line type="monotone" dataKey="price" strokeWidth={2} dot={false} />
-                  {/* Vertical line at "today" index (between past and future). We place it at x of today label. */}
-                  <ReferenceLine x={fmt(new Date())} stroke="#9ca3af" strokeDasharray="4 4" label={{ value: "Today", position: "top", fill: "#6b7280" }} />
+                  <ReferenceLine
+                    x={fmt(new Date())}
+                    stroke="#9ca3af"
+                    strokeDasharray="4 4"
+                    label={{ value: "Today", position: "top", fill: "#6b7280" }}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </div>
