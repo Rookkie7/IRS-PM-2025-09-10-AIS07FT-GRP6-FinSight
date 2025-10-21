@@ -46,6 +46,56 @@ class RagService:
         # 一次请求带入 RagFlow 的历史轮数（只取最近 N 条）
         self.history_window = history_window or getattr(settings, "RAG_HISTORY_WINDOW", 20)
 
+    def _build_prompt_config(
+        self,
+        *,
+        prompt_text: Optional[str] = None,
+        top_n: Optional[int] = None,
+        similarity_threshold: Optional[float] = None,
+        keywords_similarity_weight: Optional[float] = None,
+        show_quote: Optional[bool] = None,
+        refine_multiturn: Optional[bool] = None
+    ) -> Dict[str, Any]:
+        """
+        返回 RagFlow /api/v1/chats 的 prompt 配置对象。
+        这些键名与 RagFlow 返回的结构一致（empty_response / opener 可按需设置）。
+        """
+        # 选择优先级：调用参数 > settings 默认 > 合理兜底
+        return {
+            "prompt_type": "simple",  # 如 UI 使用 simple prompt
+            "empty_response": "Sorry! No relevant content was found in the knowledge base!",
+            "opener": "Hi! I'm your assistant. What can I do for you?",
+            "prompt": prompt_text
+                or settings.RAGFLOW_PROMPT_TEXT
+                or (
+                    "You are an intelligent assistant. Summarize the content of the knowledge base to answer the question. "
+                    "When all knowledge base content is irrelevant, your answer must include: "
+                    "\"The answer you are looking for is not found in the knowledge base!\" "
+                    "Answers need to consider chat history.\nHere is the knowledge base:\n{knowledge}\nThe above is the knowledge base."
+                ),
+            "top_n": top_n if top_n is not None else settings.RAGFLOW_PROMPT_TOP_N,
+            "similarity_threshold": (
+                similarity_threshold
+                if similarity_threshold is not None
+                else settings.RAGFLOW_PROMPT_SIMILARITY_THRESHOLD
+            ),
+            "keywords_similarity_weight": (
+                keywords_similarity_weight
+                if keywords_similarity_weight is not None
+                else settings.RAGFLOW_PROMPT_KW_WEIGHT
+            ),
+            "show_quote": show_quote if show_quote is not None else settings.RAGFLOW_PROMPT_SHOW_QUOTE,
+            "refine_multiturn": (
+                refine_multiturn
+                if refine_multiturn is not None
+                else settings.RAGFLOW_PROMPT_REFINE_MULTITURN
+            ),
+            "rerank_model": "",
+            "tts": False,
+            # simple 模板下建议显式给出占位符变量
+            "variables": [{"key": "knowledge", "optional": False}],
+        }
+
     async def list_datasets(self) -> List[Dict[str, Any]]:
         url = f"{self.base_url}/api/v1/datasets"
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -179,27 +229,43 @@ class RagService:
     # Internals
     # ------------------------
     async def _ensure_chat_session(
-            self,
-            *,
-            user_id: Optional[str],
-            model_override: Optional[str] = None,
-            dataset_ids_override: Optional[List[str]] = None
+        self,
+        *,
+        user_id: Optional[str],
+        dataset_ids: Optional[List[str]] = None,
+        model_name: Optional[str] = None,
+        prompt_text: Optional[str] = None,
+        # 下面这些是 prompt 的细节可选覆盖（按需传）
+        top_n: Optional[int] = None,
+        similarity_threshold: Optional[float] = None,
+        keywords_similarity_weight: Optional[float] = None,
+        show_quote: Optional[bool] = None,
+        refine_multiturn: Optional[bool] = None
     ) -> str:
-        url = f"{self.base_url}/api/v1/chats"
+        """
+        显式在 RagFlow 创建 chat，并把自定义 prompt 一起写进去。
+        """
+        base = self.base_url.rstrip("/")
+        url = f"{base}/api/v1/chats"
 
         name_prefix = getattr(settings, "RAGFLOW_CHAT_NAME_PREFIX", "chat") or "chat"
         name = f"{name_prefix}-{user_id or 'anon'}-{uuid.uuid4().hex[:6]}"
 
-        # 默认从 settings 读取；若前端传了 dataset_ids 就优先用前端的
-        default_datasets = _split_csv(getattr(settings, "RAGFLOW_DATASET_IDS", ""))
-        dataset_ids = dataset_ids_override if dataset_ids_override else default_datasets
-
-        payload: Dict[str, Any] = {"name": name}
+        payload: Dict[str, Any] = {
+            "name": name,
+            "prompt": self._build_prompt_config(
+                prompt_text=prompt_text,
+                top_n=top_n,
+                similarity_threshold=similarity_threshold,
+                keywords_similarity_weight=keywords_similarity_weight,
+                show_quote=show_quote,
+                refine_multiturn=refine_multiturn
+            ),
+        }
         if dataset_ids:
             payload["dataset_ids"] = dataset_ids
-        mdl = (model_override or self.model)
-        if mdl:
-            payload["llm"] = {"model_name": mdl}
+        if (model_name or self.model):
+            payload["llm"] = {"model_name": model_name or self.model}
 
         async def do_create(p: dict) -> Optional[str]:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -222,13 +288,15 @@ class RagService:
                 cid = j["data"].get("id") or j["data"].get("chat_id")
                 if cid:
                     return str(cid)
-            if code == 102:  # 名称冲突
+            if code == 102:  # name 冲突
                 return None
             raise RuntimeError(f"RagFlow create-chat failed: {j}")
 
+        # 首次
         cid = await do_create(payload)
         if cid:
             return cid
+        # 冲突重试
         payload["name"] = f"{name}-r{uuid.uuid4().hex[:4]}"
         cid = await do_create(payload)
         if cid:
