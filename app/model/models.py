@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, List, Any
 from datetime import datetime
@@ -71,6 +71,30 @@ class News(BaseModel):
     # embedding: Optional[EmbeddingVector] = None
     # cleaned: bool = False
     ...
+Vector = List[float]
+
+class NewsItem(BaseModel):
+    news_id: str
+    title: str
+    text: str
+    source: str
+    url: str
+    published_at: datetime
+    tickers: List[str] = Field(default_factory=list)
+    topics: List[str] = Field(default_factory=list)
+    sentiment: float = 0.0  # [-1,1]，将来用 FinBERT: P(pos)-P(neg)
+    vector: Optional[Vector] = None  # 入库前由嵌入器生成
+    vector_prof_20d: List[float] = Field(default_factory=list)
+    model_config = {
+        "extra": "ignore"  # 允许额外字段被忽略（保留原行为）
+    }
+    
+class BehaviorEvent(BaseModel):
+    user_id: str
+    news_id: str
+    type: Literal["click","dwell","save","dislike"] = "click"
+    dwell: float = 0.0      # 秒
+    ts: datetime = Field(default_factory=datetime.utcnow)
 
 Base = declarative_base()
 
@@ -100,7 +124,6 @@ class UserProfile(Base):
     __tablename__ = "user_profiles"
 
     user_id = Column(String(50), primary_key=True, index=True)
-
     # 20维用户画像向量
     profile_vector_20d = Column(Text)
     # 详细的画像数据

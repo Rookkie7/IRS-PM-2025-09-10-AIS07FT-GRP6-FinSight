@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
     AUTH_SECRET_KEY: str = Field(alias="AUTH_SECRET_KEY")
     AUTH_ALGORITHM: str = Field("HS256", alias="AUTH_ALGORITHM")
@@ -102,12 +102,6 @@ class Settings(BaseSettings):
     ENV: str = Field("dev", env="ENV")        # dev | prod
     DEBUG: bool = Field(True, env="DEBUG")     # True: 输出更详细错误/开启调试路由
 
-    # v2 风格，代替 class Config
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-    )
     # LLM Setting
     LLM_PROVIDER: str = Field("deepseek_openai", alias="LLM_PROVIDER")
     LLM_OPENAI_BASE: str = Field("http://127.0.0.1:8000/v1", alias="LLM_OPENAI_BASE")

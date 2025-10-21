@@ -7,6 +7,8 @@ from typing import Dict, List, Optional, Union
 
 import requests
 from app.config import settings
+import logging
+log = logging.getLogger("app.adapters.fetchers.marketaux_fetcher")
 
 # 统一 11 行业标签（顺序固定，和 user_profile_20d 前11维一一对应）
 INDUSTRIES_11 = [
@@ -132,73 +134,6 @@ class MarketauxFetcher:
         hits = list(dict.fromkeys(hits))
         # 只保留一个（可选：按优先级或首个）
         return hits[:1]
-    
-
-    # === 修改：把 entities 聚合出 tickers/topics/sentiment ===
-    # def _norm_one(self, it: Dict) -> Dict:
-    #     title = it.get("title") or ""
-    #     text = (
-    #         it.get("main_text") or it.get("content") or
-    #         it.get("description") or it.get("snippet") or ""
-    #     )
-    #     src = (it.get("source") or {}).get("name") if isinstance(it.get("source"), dict) else it.get("source")
-    #     published = it.get("published_at") or it.get("published_at_utc") or it.get("published_at_local")
-
-    #     entities = it.get("entities") or []
-    #     tickers, ent_sent, topic_hints = [], [], []
-    #     tickers_from_entities = [
-    #         s.get("symbol")
-    #         for s in entities
-    #         if isinstance(s, dict) and (s.get("type") or "").lower() == "equity" and s.get("symbol")
-    #     ]
-
-    #     for e in entities:
-    #         if not isinstance(e, dict):
-    #             continue
-    #         if e.get("type") == "equity" and e.get("symbol"):
-    #             tickers.append(e["symbol"])
-    #         sc = e.get("sentiment_score")
-    #         if isinstance(sc, (int, float)):
-    #             ent_sent.append(float(sc))
-    #         # 行业/类型也可作为主题提示
-    #         ind = e.get("industry")
-    #         if isinstance(ind, str) and ind:
-    #             topic_hints.append(ind.title())
-    #         tpe = e.get("type")
-    #         if isinstance(tpe, str) and tpe and tpe.lower() not in ("equity",):
-    #             topic_hints.append(tpe.title())
-
-    #     # 整体情绪：实体情绪的均值（兜底为 0.0）
-    #     overall_sent = sum(ent_sent) / len(ent_sent) if ent_sent else 0.0
-
-    #     # topics：实体提示 + 关键词提示
-    #     # kw = self._kw_topics(title, text)
-    #     # topics = list(dict.fromkeys([t for t in (topic_hints + kw) if isinstance(t, str) and t.strip()]))
-        
-    #     kw_hit = self._kw_topics(title, text)
-    #     all_hints = kw_hit + topic_hints
-    #     normed = [x for x in ( _normalize_industry_name(x) for x in all_hints ) if x]
-    #     topics = normed[:1]  # 只保留一个标签
-
-    #     # tickers 去重；若为空再兜底 symbols 数组
-    #     symbols = it.get("symbols") or []
-    #     if symbols and isinstance(symbols, list):
-    #         symbols = [s for s in symbols if isinstance(s, str) and s.strip()]
-    #     tickers = list(dict.fromkeys(tickers or symbols))
-
-    #     return {
-    #         "news_id": it.get("uuid") or it.get("id") or it.get("url"),
-    #         "title": title,
-    #         "text": text,
-    #         "source": src,
-    #         "url": it.get("url") or "",
-    #         "published_at": published,
-    #         # "tickers": tickers,
-    #         "entities": entities,
-    #         "tickers": tickers_from_entities,
-    #         "topics": topics,
-    #         "sentiment": float(overall_sent),
-    #     }
     
     def _norm_one(self, it: Dict) -> Dict:
         title = it.get("title") or ""

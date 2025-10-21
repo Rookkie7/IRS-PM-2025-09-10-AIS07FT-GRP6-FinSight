@@ -148,18 +148,6 @@ def ingest_pull(
                         "hint": "检查 API key / 配额 / 参数。免费层通常限制返回条数与速率。"
                     },
                 )
-        
-        # elif source.lower() == "rss":
-        #     feeds: List[str] = []
-        #     if region in (None, "us"):
-        #         feeds += [x.strip() for x in (getattr(settings, "RSS_SOURCES_US", "") or "").split(",") if x.strip()]
-        #     if region in (None, "in"):
-        #         feeds += [x.strip() for x in (getattr(settings, "RSS_SOURCES_IN", "") or "").split(",") if x.strip()]
-        #     # 去重保持顺序
-        #     feeds = list(dict.fromkeys(feeds))
-        #     fetcher = RSSFetcher(qps=float(getattr(settings, "RSS_QPS", 1.0)))
-        #     raw = fetcher.pull_many(feeds, limit_per_feed=30)
-
         else:
             raise HTTPException(400, "source must be marketaux | rss")
 

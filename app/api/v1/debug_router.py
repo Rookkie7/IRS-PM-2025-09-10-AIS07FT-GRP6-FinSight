@@ -77,46 +77,6 @@ def clear_news(service: NewsService = Depends(get_service)):
     return {"ok": True, "cleared": True}
 
 @router.get("/debug/news/latest")
-# def debug_latest_news(limit: int = 5, service: NewsService = Depends(get_service)):
-#     _guard()
-#     coll = getattr(service.news_repo, "coll", None)
-#     if coll is None:
-#         raise HTTPException(status_code=501, detail="Current news repo has no raw collection access")
-#     docs = list(
-#         coll.find({}, {
-#             "_id": 0, "news_id": 1, "source": 1, "title": 1, "published_at": 1,
-#             "tickers": 1, "topics": 1, "sentiment": 1
-#         }).sort("published_at", -1).limit(int(limit))
-#     )
-#     return {"count": len(docs), "items": docs}
-
-# def debug_news_latest(limit: int = 5, service: NewsService = Depends(get_service)):
-#     """
-#     与底层实现无关，统一走仓库接口 news_repo.latest()，
-#     返回最近的新闻及关键字段，便于排查向量等。
-#     """
-#     try:
-#         items = service.news_repo.latest(limit=limit)
-#     except AttributeError:
-#         # 如果某个仓库没实现 latest，就给出明确提示
-#         raise HTTPException(status_code=501, detail="Current news repo does not implement latest()")
-
-#     result = []
-#     for it in items:
-#         result.append({
-#             "news_id": it.news_id,
-#             "source": it.source,
-#             "title": it.title,
-#             "tickers": getattr(it, "tickers", []) or [],
-#             "topics": getattr(it, "topics", []) or [],
-#             "published_at": getattr(it, "published_at", None),
-#             "v64_dim": len(getattr(it, "vector", []) or []),              # 语义向量长度
-#             "v20_dim": len(getattr(it, "vector_prof_20d", []) or []),     # 画像向量长度
-#             "has_url": bool(getattr(it, "url", "")),
-#         })
-#     return {"items": result}
-
-@router.get("/debug/news/latest")
 def debug_news_latest(limit: int = 5, service: NewsService = Depends(get_service)):
     _guard()
 

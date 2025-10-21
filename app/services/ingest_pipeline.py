@@ -5,6 +5,9 @@ import hashlib
 from app.domain.models import NewsItem
 from app.utils.ticker_mapping import map_tickers, build_profile20_from_topics_and_signals
 
+import logging
+log = logging.getLogger("app.ingest")
+
 INDUSTRIES_11 = [
     "Utilities","Technology","Consumer Defensive","Healthcare","Basic Materials","Real Estate",
     "Energy","Industrials","Consumer Cyclical","Communication Services","Financial Services"
@@ -100,39 +103,6 @@ class IngestPipeline:
             out.append(it)
         return out
     
-    # def _iso_to_dt(s: str) -> datetime:
-    #     # 输入 ISO8601（可能无 tz），统一存为 UTC naive
-    #     try:
-    #         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-    #         if dt.tzinfo:
-    #             return dt.astimezone(timezone.utc).replace(tzinfo=None)
-    #         return dt
-    #     except Exception:
-    #         return datetime.now(timezone.utc).replace(tzinfo=None)
-
-    # def _to_news_item(self, it: Dict) -> NewsItem:
-    #     # RSS 没有 tickers：用 watchlist 轻量映射补齐
-    #     tickers = it.get("tickers") or []
-    #     if not tickers and self.watchlist:
-    #         tickers = map_tickers(it.get("title",""), it.get("text",""), self.watchlist)
-
-    #     # 嵌入（标题+摘要）
-    #     content = (it.get("title") or "") + " " + (it.get("text") or "")
-    #     vec = self.embedder.embed_text(content)
-
-    #     return NewsItem(
-    #         news_id=it["external_id"],
-    #         title=it.get("title") or "",
-    #         text=it.get("text") or "",
-    #         source=it.get("source") or "news",
-    #         url=it.get("url") or "",
-    #         published_at=_iso_to_dt(it.get("published_at") or datetime.now(timezone.utc).isoformat()),
-    #         tickers=tickers,
-    #         topics=it.get("topics") or [],
-    #         sentiment=it.get("sentiment") if it.get("sentiment") is not None else 0.0,
-    #         vector=vec,
-    #     )
-
     def _to_news_item(self, d: Dict) -> NewsItem:
         # —— 生成/选择唯一 id —— #
         nid = d.get("news_id") or d.get("external_id") or d.get("url")
@@ -177,23 +147,52 @@ class IngestPipeline:
         # —— 向量 —— #
         content = f"{item.title}\n{item.text}".strip()
         item.vector = self.embedder.embed_text(content)
-
-        # # —— 新增：构造 20维画像向量（写到 item.extra，供 repo 入库）——
-        # prof20 = build_profile20_from_topics_and_signals(item.topics, item.tickers)
-        # # 为了最小侵入，不改 NewsItem；把扩展字段放在临时属性上让 repo 使用
-        # setattr(item, "_profile20", prof20)
         
         prof20 = build_profile20_from_topics_and_sentiment(item.topics, sentiment)
         setattr(item, "_profile20", prof20)
         return item
     
-    def ingest_dicts(self, raw_items: List[Dict]) -> Tuple[int, int]:
-        """返回 (去重后数量, 实际入库数量)"""
-        clean = self._dedupe(raw_items)
-        objs = [self._to_news_item(it) for it in clean]
-        # self.news_repo.upsert_many(objs)
-        # return len(clean), len(objs)
-        res = self.news_repo.upsert_many(objs)
-        # stored = 新插入 + 修改
-        stored = int(res.get("nUpserted", 0)) + int(res.get("nModified", 0))
-        return len(clean), stored
+    def ingest_dicts(self, raw_list: list[dict]) -> int:
+        import logging
+        log = logging.getLogger("app.services.ingest_pipeline")
+        if not raw_list:
+            log.warning("[ingest] empty raw_list")
+            return 0
+
+        clean = self._dedupe(raw_list)
+        items = []
+        for d in clean:
+            try:
+                it = self._to_news_item(d)  # ✅ 会计算 _profile20（情绪版）
+                items.append(it)
+            except Exception as e:
+                log.warning(f"[ingest] skip one: {e}")
+
+        log.warning(f"[ingest] to-upsert items={len(items)}, sample_keys={list(clean[0].keys()) if clean else []}")
+
+        # ✅ 老路径：直接 upsert_many(NewsItem)
+        try:
+            res = self.news_repo.upsert_many(items)
+            written = int(res.get("nUpserted", 0)) + int(res.get("nModified", 0))
+        except AttributeError:
+            # 兜底：某些实现只有 dict 版，则把 _profile20 显式塞到 vector_prof_20d 再调用
+            as_dicts = []
+            for it in items:
+                dd = it.model_dump()
+                prof20 = getattr(it, "_profile20", None) or getattr(it, "vector_prof_20d", None) or []
+                if prof20:
+                    dd["vector_prof_20d"] = list(prof20)
+                as_dicts.append(dd)
+            res = self.news_repo.upsert_many_dicts(as_dicts)
+            written = int(res.get("nUpserted", 0)) + int(res.get("nModified", 0))
+
+        log.warning(f"[ingest] upsert result: {res}")
+
+        try:
+            n = self.news_repo.count_all()
+            latest = getattr(self.news_repo, "raw_latest_docs", lambda n: [])(limit=3)
+            log.warning(f"[ingest] after-write: count_all={n}, latest_titles={[x.get('title') for x in latest]}")
+        except Exception as e:
+            log.exception(f"[ingest] after-write check failed: {e}")
+
+        return written
