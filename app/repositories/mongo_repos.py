@@ -5,21 +5,7 @@ from datetime import datetime, timezone, timedelta
 from pymongo import MongoClient, ASCENDING
 from app.domain.models import NewsItem, BehaviorEvent, UserProfile
 
-
-# def _to_utc_naive(dt: datetime | None) -> datetime | None:
-#     if dt is None:
-#         return None
-#     if dt.tzinfo is None:
-#         return dt
-#     return dt.astimezone(timezone.utc).replace(tzinfo=None)
-
 class MongoNewsRepo:
-    # def __init__(self, mongo_uri: str, db_name: str = "finsight"):
-    #     self.client = MongoClient(mongo_uri)
-    #     self.col = self.client[db_name]["news"]
-    #     self.col.create_index([("news_id", ASCENDING)], unique=True)
-    #     self.col.create_index([("published_at", ASCENDING)])
-
     def __init__(self, uri: str, db_name: str = "finsight", col_name: str = "news"):
         self.client = MongoClient(uri)
         self.col = self.client[db_name][col_name]
@@ -40,18 +26,6 @@ class MongoNewsRepo:
         ok, _ = self.ping_detail()
         return ok
         
-    # def upsert_many(self, items: Iterable[NewsItem]):
-    #     print("[MongoNewsRepo] upsert_many using", "bulk" or "single")  # 按你选择写
-
-    #     ops: list[UpdateOne] = []
-    #     for it in items:
-    #         d = it.model_dump()
-    #         d["published_at"] = _to_utc_naive(d.get("published_at"))
-    #         ops.append(
-    #             UpdateOne({"news_id": d["news_id"]}, {"$set": d}, upsert=True)
-    #         )
-    #     if ops:
-    #         self.col.bulk_write(ops)
 
     def upsert_many(self, items: List[NewsItem]):
         if not items:

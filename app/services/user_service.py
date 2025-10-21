@@ -2,11 +2,12 @@ import numpy as np
 import logging
 from typing import List, Dict, Any, Optional
 import random
+import json
 from fastapi import Depends
 from datetime import datetime
 
 from sqlalchemy.orm.session import Session
-
+from sqlalchemy import text
 from app.adapters.db.database_client import get_postgres_session
 from app.model.models import UserProfile
 
@@ -62,6 +63,38 @@ class UserService:
                 logger.info(f"用户 {user_id} 画像创建成功")
 
             self.db.commit()
+
+            # === 仅新增 64d 向量相关 ===
+            zeros64 = json.dumps([0.0] * 64)  # 传字符串，由 SQL 层 ::vector 解析
+            now = datetime.utcnow()
+
+            if existing and reset:
+                # 重置：强制写 0
+                self.db.execute(
+                    text("""
+                        UPDATE user_profiles
+                        SET user_semantic_64d_short = CAST(:v AS vector(64)),
+                            user_semantic_64d_long  = CAST(:v AS vector(64)),
+                            updated_at = :now
+                        WHERE user_id = :uid
+                    """),
+                    {"v": zeros64, "now": now, "uid": user_id}
+                )
+            else:
+                # 普通初始化：空时写 0（不覆盖已有值）
+                self.db.execute(
+                    text("""
+                        UPDATE user_profiles
+                        SET user_semantic_64d_short = COALESCE(user_semantic_64d_short, CAST(:v AS vector(64))),
+                            user_semantic_64d_long  = COALESCE(user_semantic_64d_long,  CAST(:v AS vector(64))),
+                            updated_at = :now
+                        WHERE user_id = :uid
+                    """),
+                    {"v": zeros64, "now": now, "uid": user_id}
+                )
+
+            self.db.commit()
+
             return self.get_user_profile(user_id)
 
         except Exception as e:
