@@ -1,5 +1,17 @@
-import React from 'react';
-import { X, DollarSign, TrendingUp, BarChart3, Calendar, Building2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, DollarSign, TrendingUp, BarChart3, Calendar, Building2, Volume2, Target, Zap, Shield } from 'lucide-react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  AreaChart,
+  Area
+} from 'recharts';
 
 interface StockRawData {
   symbol: string;
@@ -62,6 +74,10 @@ interface StockDetailModalProps {
 }
 
 export const StockDetailModal: React.FC<StockDetailModalProps> = ({ rawData, onClose }) => {
+  const [activePriceType, setActivePriceType] = useState<'close' | 'open' | 'high' | 'low'>('close');
+  const [hoveredLine, setHoveredLine] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState<'1m' | '3m' | '6m' | '1y'>('1m');
+
   if (!rawData) return null;
 
   const formatNumber = (num?: number) => {
@@ -90,6 +106,95 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ rawData, onC
     });
   };
 
+  const chartData = useMemo(() => {
+    if (!rawData.historical_data?.time_series) return [];
+    
+    // 根据选择的时间范围过滤数据
+    let dataSlice;
+    switch (timeRange) {
+      case '1m':
+        dataSlice = rawData.historical_data.time_series.slice(-30);
+        break;
+      case '3m':
+        dataSlice = rawData.historical_data.time_series.slice(-90);
+        break;
+      case '6m':
+        dataSlice = rawData.historical_data.time_series.slice(-180);
+        break;
+      case '1y':
+        dataSlice = rawData.historical_data.time_series;
+        break;
+      default:
+        dataSlice = rawData.historical_data.time_series.slice(-30);
+    }
+    
+    return dataSlice.map(data => ({
+      date: new Date(data.date).toLocaleDateString(),
+      fullDate: data.date,
+      open: data.open,
+      high: data.high,
+      low: data.low,
+      close: data.close,
+      volume: data.volume
+    })).reverse();
+  }, [rawData.historical_data?.time_series, timeRange]);
+
+  // 计算价格范围用于Y轴
+  const priceRange = useMemo(() => {
+    if (!chartData.length) return { min: 0, max: 100 };
+    
+    const allPrices = chartData.flatMap(item => [item.open, item.high, item.low, item.close]);
+    const minPrice = Math.min(...allPrices);
+    const maxPrice = Math.max(...allPrices);
+    
+    // 添加一些边距
+    const padding = (maxPrice - minPrice) * 0.1;
+    return {
+      min: Math.max(0, minPrice - padding),
+      max: maxPrice + padding
+    };
+  }, [chartData]);
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+          <p className="font-medium text-gray-900">{label}</p>
+          {payload.map((entry: any, index: number) => (
+            <p key={index} style={{ color: entry.color }} className="text-sm">
+              {entry.name}: ${entry.value.toFixed(2)}
+            </p>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const CustomYAxisTick = ({ x, y, payload }: any) => {
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text x={0} y={0} dy={4} textAnchor="end" fill="#666" fontSize={12}>
+          ${payload.value.toFixed(2)}
+        </text>
+      </g>
+    );
+  };
+
+  const priceTypes = [
+    { key: 'close' as const, name: 'Close', color: '#3B82F6' },
+    { key: 'open' as const, name: 'Open', color: '#10B981' },
+    { key: 'high' as const, name: 'High', color: '#EF4444' },
+    { key: 'low' as const, name: 'Low', color: '#8B5CF6' }
+  ];
+
+  const timeRangeOptions = [
+    { value: '1m', label: '1 Month' },
+    { value: '3m', label: '3 Months' },
+    { value: '6m', label: '6 Months' },
+    { value: '1y', label: '1 Year' }
+  ];
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
@@ -107,13 +212,14 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ rawData, onC
         </div>
 
         <div className="overflow-y-auto p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          {/* Header Stats */}
+          <div className="grid grid-cols-1 md:grid-rows-2 md:grid-cols-3 gap-4">
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl p-4 md:row-span-2">
               <div className="flex items-center space-x-2 mb-2">
-                <Building2 className="h-5 w-5 text-blue-600" />
-                <span className="text-sm font-medium text-blue-900">Basic Info</span>
+                <Building2 className="h-5 w-5" />
+                <span className="text-sm font-medium">Company Info</span>
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <p className="text-sm"><span className="font-medium">Sector:</span> {rawData.basic_info?.sector || 'N/A'}</p>
                 <p className="text-sm"><span className="font-medium">Industry:</span> {rawData.basic_info?.industry || 'N/A'}</p>
                 <p className="text-sm"><span className="font-medium">Country:</span> {rawData.basic_info?.country || 'N/A'}</p>
@@ -121,177 +227,296 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({ rawData, onC
               </div>
             </div>
 
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl p-4">
               <div className="flex items-center space-x-2 mb-2">
-                <DollarSign className="h-5 w-5 text-green-600" />
-                <span className="text-sm font-medium text-green-900">Market Cap</span>
+                <DollarSign className="h-5 w-5" />
+                <span className="text-sm font-medium">Market Cap</span>
               </div>
-              <p className="text-2xl font-bold text-green-700">
+              <p className="text-2xl font-bold">
                 {formatMarketCap(rawData.basic_info?.market_cap)}
               </p>
             </div>
 
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+            <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl p-4">
               <div className="flex items-center space-x-2 mb-2">
-                <TrendingUp className="h-5 w-5 text-purple-600" />
-                <span className="text-sm font-medium text-purple-900">Volatility (30D)</span>
+                <TrendingUp className="h-5 w-5" />
+                <span className="text-sm font-medium">30D Volatility</span>
               </div>
-              <p className="text-2xl font-bold text-purple-700">
+              <p className="text-2xl font-bold">
                 {formatPercent(rawData.historical_data?.volatility_30d)}
+              </p>
+            </div>
+
+            <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl p-4">
+              <div className="flex items-center space-x-2 mb-2">
+                <Target className="h-5 w-5" />
+                <span className="text-sm font-medium">P/E Ratio</span>
+              </div>
+              <p className="text-2xl font-bold">
+                {formatNumber(rawData.financials?.valuation_metrics?.trailing_pe)}
+              </p>
+            </div>
+
+            <div className="bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl p-4">
+              <div className="flex items-center space-x-2 mb-2">
+                <Zap className="h-5 w-5" />
+                <span className="text-sm font-medium">Beta</span>
+              </div>
+              <p className="text-2xl font-bold">
+                {formatNumber(rawData.financials?.key_ratios?.beta)}
               </p>
             </div>
           </div>
 
-          {rawData.descriptions?.business_summary && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <h3 className="font-semibold text-gray-900 mb-2">Business Summary</h3>
-              <p className="text-sm text-gray-700 leading-relaxed">{rawData.descriptions.business_summary}</p>
-            </div>
-          )}
-
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <h3 className="font-semibold text-gray-900 mb-3 flex items-center">
-              <BarChart3 className="h-5 w-5 mr-2 text-gray-600" />
-              Key Financial Ratios
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div>
-                <p className="text-xs text-gray-500">Profit Margin</p>
-                <p className="font-medium">{formatPercent(rawData.financials?.key_ratios?.profit_margin)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Revenue Growth</p>
-                <p className="font-medium">{formatPercent(rawData.financials?.key_ratios?.revenue_growth)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Return on Equity</p>
-                <p className="font-medium">{formatPercent(rawData.financials?.key_ratios?.return_on_equity)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Debt to Equity</p>
-                <p className="font-medium">{formatNumber(rawData.financials?.key_ratios?.debt_to_equity)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Current Ratio</p>
-                <p className="font-medium">{formatNumber(rawData.financials?.key_ratios?.current_ratio)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Operating Margin</p>
-                <p className="font-medium">{formatPercent(rawData.financials?.key_ratios?.operating_margin)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Gross Margin</p>
-                <p className="font-medium">{formatPercent(rawData.financials?.key_ratios?.gross_margin)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Earnings Growth</p>
-                <p className="font-medium">{formatPercent(rawData.financials?.key_ratios?.earnings_growth)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Beta</p>
-                <p className="font-medium">{formatNumber(rawData.financials?.key_ratios?.beta)}</p>
+          {/* Price Chart */}
+          <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6 gap-4">
+              <h3 className="text-xl font-bold text-gray-900">Price History</h3>
+              <div className="flex flex-wrap gap-3">
+                {/* 时间范围选择器 */}
+                <div className="flex bg-gray-100 rounded-lg p-1">
+                  {timeRangeOptions.map(({ value, label }) => (
+                    <button
+                      key={value}
+                      onClick={() => setTimeRange(value as any)}
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                        timeRange === value
+                          ? 'bg-white text-blue-600 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                
+                {/* 价格类型选择器 */}
+                <div className="flex space-x-2">
+                  {priceTypes.map(({ key, name, color }) => (
+                    <button
+                      key={key}
+                      onClick={() => setActivePriceType(key)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                        activePriceType === key
+                          ? 'text-white'
+                          : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                      style={{
+                        backgroundColor: activePriceType === key ? color : 'transparent',
+                        border: activePriceType === key ? 'none' : `1px solid ${color}`
+                      }}
+                      onMouseEnter={() => setHoveredLine(key)}
+                      onMouseLeave={() => setHoveredLine(null)}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Valuation Metrics</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div>
-                <p className="text-xs text-gray-500">Trailing P/E</p>
-                <p className="font-medium">{formatNumber(rawData.financials?.valuation_metrics?.trailing_pe)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Forward P/E</p>
-                <p className="font-medium">{formatNumber(rawData.financials?.valuation_metrics?.forward_pe)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Price to Sales</p>
-                <p className="font-medium">{formatNumber(rawData.financials?.valuation_metrics?.price_to_sales)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Price to Book</p>
-                <p className="font-medium">{formatNumber(rawData.financials?.valuation_metrics?.price_to_book)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Enterprise Value</p>
-                <p className="font-medium">{formatMarketCap(rawData.financials?.valuation_metrics?.enterprise_value)}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Dividend Information</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-xs text-gray-500">Dividend Yield</p>
-                <p className="font-medium">{formatPercent(rawData.financials?.dividend_info?.dividend_yield)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Payout Ratio</p>
-                <p className="font-medium">{formatPercent(rawData.financials?.dividend_info?.payout_ratio)}</p>
-              </div>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: 12 }}
+                    tickMargin={10}
+                  />
+                  <YAxis 
+                    tick={<CustomYAxisTick />}
+                    tickMargin={10}
+                    domain={[priceRange.min, priceRange.max]}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend 
+                    onMouseEnter={(e) => setHoveredLine(e.dataKey)}
+                    onMouseLeave={() => setHoveredLine(null)}
+                  />
+                  {priceTypes.map(({ key, name, color }) => (
+                    <Area
+                      key={key}
+                      type="monotone"
+                      dataKey={key}
+                      name={name}
+                      stroke={color}
+                      fill={`${color}20`}
+                      strokeWidth={hoveredLine === key || !hoveredLine ? 3 : 1}
+                      fillOpacity={0.6}
+                      activeDot={{ r: 6, stroke: color, strokeWidth: 2 }}
+                    />
+                  ))}
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <h3 className="font-semibold text-gray-900 mb-3">Historical Performance</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-              <div>
-                <p className="text-xs text-gray-500">30D Volatility</p>
-                <p className="font-medium">{formatPercent(rawData.historical_data?.volatility_30d)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">90D Volatility</p>
-                <p className="font-medium">{formatPercent(rawData.historical_data?.volatility_90d)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">1M Momentum</p>
-                <p className="font-medium">{formatPercent(rawData.historical_data?.momentum_1m)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">3M Momentum</p>
-                <p className="font-medium">{formatPercent(rawData.historical_data?.momentum_3m)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Avg Volume (30D)</p>
-                <p className="font-medium">{formatNumber(rawData.historical_data?.volume_avg_30d)}</p>
-              </div>
-            </div>
-          </div>
-
-          {rawData.historical_data?.time_series && rawData.historical_data.time_series.length > 0 && (
-            <div className="bg-white border border-gray-200 rounded-lg p-4">
-              <h3 className="font-semibold text-gray-900 mb-3 flex items-center">
-                <Calendar className="h-5 w-5 mr-2 text-gray-600" />
-                Historical Price Data (Recent 30 Days)
+          {/* Financial Metrics */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Valuation Metrics */}
+            <div className="bg-gray-50 rounded-xl p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                <DollarSign className="h-5 w-5 mr-2 text-blue-600" />
+                Valuation Metrics
               </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b">
-                    <tr>
-                      <th className="px-4 py-2 text-left font-medium text-gray-700">Date</th>
-                      <th className="px-4 py-2 text-right font-medium text-gray-700">Open</th>
-                      <th className="px-4 py-2 text-right font-medium text-gray-700">High</th>
-                      <th className="px-4 py-2 text-right font-medium text-gray-700">Low</th>
-                      <th className="px-4 py-2 text-right font-medium text-gray-700">Close</th>
-                      <th className="px-4 py-2 text-right font-medium text-gray-700">Volume</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {rawData.historical_data.time_series.slice(-30).reverse().map((data, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50">
-                        <td className="px-4 py-2">{formatDate(data.date)}</td>
-                        <td className="px-4 py-2 text-right">${data.open.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-right">${data.high.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-right">${data.low.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-right font-medium">${data.close.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-right">{formatNumber(data.volume)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Market Cap</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatMarketCap(rawData.basic_info?.market_cap)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">P/E Ratio</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatNumber(rawData.financials?.valuation_metrics?.trailing_pe)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Forward P/E</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatNumber(rawData.financials?.valuation_metrics?.forward_pe)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Price/Sales</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatNumber(rawData.financials?.valuation_metrics?.price_to_sales)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Price/Book</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatNumber(rawData.financials?.valuation_metrics?.price_to_book)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Enterprise Value</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatMarketCap(rawData.financials?.valuation_metrics?.enterprise_value)}
+                  </p>
+                </div>
               </div>
+            </div>
+
+            {/* Financial Ratios */}
+            <div className="bg-gray-50 rounded-xl p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                <BarChart3 className="h-5 w-5 mr-2 text-green-600" />
+                Financial Ratios
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Profit Margin</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatPercent(rawData.financials?.key_ratios?.profit_margin)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Revenue Growth</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatPercent(rawData.financials?.key_ratios?.revenue_growth)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">ROE</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatPercent(rawData.financials?.key_ratios?.return_on_equity)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Debt/Equity</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatNumber(rawData.financials?.key_ratios?.debt_to_equity)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Current Ratio</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatNumber(rawData.financials?.key_ratios?.current_ratio)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Beta</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatNumber(rawData.financials?.key_ratios?.beta)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Dividend & Performance */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Dividend Info */}
+            <div className="bg-gray-50 rounded-xl p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                <TrendingUp className="h-5 w-5 mr-2 text-yellow-600" />
+                Dividend Information
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Dividend Yield</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatPercent(rawData.financials?.dividend_info?.dividend_yield)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">Payout Ratio</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatPercent(rawData.financials?.dividend_info?.payout_ratio)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Performance Metrics */}
+            <div className="bg-gray-50 rounded-xl p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                <Zap className="h-5 w-5 mr-2 text-red-600" />
+                Performance Metrics
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">1M Momentum</p>
+                  <p className={`font-semibold ${
+                    (rawData.historical_data?.momentum_1m || 0) > 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {formatPercent(rawData.historical_data?.momentum_1m)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">3M Momentum</p>
+                  <p className={`font-semibold ${
+                    (rawData.historical_data?.momentum_3m || 0) > 0 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {formatPercent(rawData.historical_data?.momentum_3m)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">30D Volatility</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatPercent(rawData.historical_data?.volatility_30d)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <p className="text-sm text-gray-600">90D Volatility</p>
+                  <p className="font-semibold text-gray-900">
+                    {formatPercent(rawData.historical_data?.volatility_90d)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Business Summary */}
+          {rawData.descriptions?.business_summary && (
+            <div className="bg-white border border-gray-200 rounded-xl p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Business Summary</h3>
+              <p className="text-gray-700 leading-relaxed">
+                {rawData.descriptions.business_summary}
+              </p>
             </div>
           )}
         </div>
