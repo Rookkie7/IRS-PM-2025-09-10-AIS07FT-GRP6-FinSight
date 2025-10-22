@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 
 import uvicorn
+import logging
 from fastapi import FastAPI
 
 from app.adapters.db.database_client import init_mongo_via_ssh, init_postgres_sync
@@ -19,6 +20,16 @@ from app.api.v1.stocks_router import router as stocks_router
 from app.api.v1.auth_router import router as auth_router
 from app.api.v1.user_router import router as user_router
 from app.utils.healthy import check_database_connection
+
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# 为你的模块设置更详细的日志级别
+logging.getLogger("app.services.stock_recommender").setLevel(logging.DEBUG)
 
 
 @asynccontextmanager
@@ -50,7 +61,7 @@ def create_app() -> FastAPI:
     # 配置CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5174", "http://127.0.0.1:5174"],  # 生产环境应该限制具体域名
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],  # 生产环境应该限制具体域名
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pymongo.database import Database
-
+import math
 from sqlalchemy.orm.session import Session
 
-from app.deps import get_auth_service, get_user_service
+from app.deps import get_auth_service, get_user_service, get_multi_objective_recommender
 from app.adapters.db.database_client import get_postgres_session, get_mongo_db
 from app.services.stock_service import StockService
 from app.services.user_service import UserService
+
+from app.services.stock_recommender import MultiObjectiveRecommender
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
@@ -130,6 +132,16 @@ async def get_all_stocks(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取股票列表失败: {str(e)}")
 
+def clean_float_values(data):
+    """清理数据中的无效浮点数值"""
+    if isinstance(data, float):
+        return data if math.isfinite(data) else None
+    elif isinstance(data, dict):
+        return {k: clean_float_values(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [clean_float_values(item) for item in data]
+    else:
+        return data
 
 @router.get("/raw-data/{symbol}")
 async def get_stock_raw_data(
@@ -149,13 +161,65 @@ async def get_stock_raw_data(
 
         # 移除MongoDB的_id字段
         raw_data.pop('_id', None)
-
+        # 清理无效的浮点数值
+        cleaned_data = clean_float_values(raw_data)
         return {
             "ok": True,
             "symbol": symbol,
-            "raw_data": raw_data
+            "raw_data": cleaned_data
         }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取原始数据失败: {str(e)}")
+
+
+@router.get("/recommend/v2")
+async def get_advanced_recommendations(
+        user_id: str = Query(..., description="用户ID"),
+        top_k: int = Query(5, ge=1, le=20),
+        risk_profile: str = Query("balanced", description="风险偏好: conservative/balanced/aggressive"),
+        postgres_db: Session = Depends(get_postgres_session),
+        mongo_db: Database = Depends(get_mongo_db),
+        user_service: UserService = Depends(get_user_service)
+):
+    """
+    多目标优化股票推荐（高级版）
+    """
+    try:
+        # 检查用户是否存在
+        user_profile = user_service.get_user_profile(user_id)
+        if not user_profile:
+            raise HTTPException(
+                status_code=404,
+                detail=f"用户 {user_id} 的画像不存在，请先初始化用户画像"
+            )
+
+        # 获取用户20维向量
+        user_vector = user_profile.get_profile_vector_20d()
+
+        # 使用多目标推荐器（异步调用）
+        recommender = MultiObjectiveRecommender(postgres_db, mongo_db)
+        recommendations = await recommender.recommend_stocks(  # 添加 await
+            user_vector, top_k, risk_profile
+        )
+
+        return {
+            "ok": True,
+            "user_id": user_id,
+            "risk_profile": risk_profile,
+            "recommendation_strategy": "多目标优化推荐",
+            "components": {
+                "preference": "用户投资偏好匹配",
+                "risk_adjusted": "风险调整后收益",
+                "diversification": "投资组合分散化",
+                "market_timing": "市场时机适应性"
+            },
+            "recommendations": recommendations,
+            "count": len(recommendations)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"高级推荐失败: {str(e)}")

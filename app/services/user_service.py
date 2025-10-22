@@ -263,9 +263,11 @@ class UserService:
 
         # 基于行为类型的学习率
         learning_rates = {
-            'click': 0.1,
-            'favorite': 0.3,
-            'dislike': -0.3
+            'click': 0.05,
+            'favorite': 0.2,
+            'dislike': -0.2,
+            'unfavorite':-0.2,
+            'undislike':0.2
         }
 
         learning_rate = learning_rates.get(behavior_type, 0)
@@ -296,11 +298,15 @@ class UserService:
 
             # 根据行为类型调整：正反馈向股票特征靠近，负反馈远离
             if behavior_type == 'dislike':
-                learning_rate = -0.1
+                learning_rate = -0.2
             elif behavior_type == 'click':
                 learning_rate = 0.05
             elif behavior_type == 'favorite':
-                learning_rate = 0.1
+                learning_rate = 0.2
+            elif behavior_type == 'unfavorite':
+                learning_rate = -0.2
+            elif behavior_type == 'undislike':
+                learning_rate = 0.2
             else:
                 learning_rate = 0
 

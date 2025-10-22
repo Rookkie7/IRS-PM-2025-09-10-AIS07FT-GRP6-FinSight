@@ -16,6 +16,7 @@ from app.services.news_service import NewsService
 from app.services.rec_service import RecService
 from app.services.rag_service import RagService
 from app.services.forecast_service import ForecastService
+from app.services.stock_recommender import MultiObjectiveRecommender
 from app.config import settings
 
 def get_query_embedder():
@@ -48,6 +49,12 @@ def get_stock_service(
         postgres_db=postgres_db,
         mongo_db=mongo_db,
     )
+
+def get_multi_objective_recommender(
+    postgres_db: Session = Depends(get_postgres_session),
+    mongo_db: Database = Depends(get_mongo_db)
+):
+    return MultiObjectiveRecommender(postgres_db, mongo_db)
 
 def get_llm():
     if settings.LLM_PROVIDER == "deepseek_openai":

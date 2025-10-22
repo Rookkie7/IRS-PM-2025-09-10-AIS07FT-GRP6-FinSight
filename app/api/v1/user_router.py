@@ -168,7 +168,7 @@ async def get_user_vector(
 @router.post("/behavior/update")
 async def update_user_behavior(
         user_id: str = Query(..., description="用户ID"),
-        behavior_type: str = Query(..., description="行为类型: click, favorite, dislike"),
+        behavior_type: str = Query(..., description="行为类型: click, favorite, dislike, unfavorite, undislike"),
         stock_symbol: str = Query(..., description="股票代码"),
         stock_sector: str = Query(None, description="股票行业，如果不提供尝试从MongoDB获取"),
         invest_update: bool = Query(True, description="是否更新投资偏好"),
