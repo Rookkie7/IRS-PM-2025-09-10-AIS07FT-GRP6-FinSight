@@ -2,7 +2,9 @@ from pydantic import BaseModel
 from requests.sessions import Session
 from typing import Literal
 from fastapi.security import OAuth2PasswordBearer
-from app.model.models import UserPublic
+
+from app.domain.models import UserProfile
+from app.model.models import UserPublic, BehaviorEvent
 from app.services.auth_service import AuthService
 from app.deps import get_auth_service, get_user_service, get_stock_service
 from fastapi import APIRouter, Depends, HTTPException, Query

@@ -1,3 +1,5 @@
+import textwrap
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 
@@ -11,7 +13,6 @@ class Settings(BaseSettings):
     APP_NAME: str = "Finsight"
     MONGO_URI: str = Field(..., env="MONGO_URI")
     MONGO_DB: str = Field("finsight", env="MONGO_DB")
-    REDIS_URL: str = Field(..., env="REDIS_URL")
 
     # —— 新闻抓取主源 & 抓取参数 ——
     MARKETAUX_API_KEY: str = Field("", env="MARKETAUX_API_KEY")  # 可先留空
@@ -51,17 +52,6 @@ class Settings(BaseSettings):
     LOCAL_MONGO_HOST: str = "127.0.0.1"
     LOCAL_MONGO_PORT: int = 0  # 0=随机
 
-    MONGO_URI: str | None = Field(default=None, alias="MONGO_URI")
-    MONGO_DB: str = "finsight"
-
-    # —— 新闻抓取主源 & 抓取参数 ——
-    MARKETAUX_API_KEY: str = Field("", env="MARKETAUX_API_KEY")  # 可先留空
-    WATCHLIST_FILE: str = Field("./watchlist.json", env="WATCHLIST_FILE")
-    MARKETAUX_DEFAULT_SYMBOLS: str = Field("", env="MARKETAUX_DEFAULT_SYMBOLS")
-    
-    FETCH_QPS: float = Field(0.5, env="FETCH_QPS")                    # Marketaux 节流
-    DAILY_BUDGET_MARKETAUX: int = Field(80, env="DAILY_BUDGET_MARKETAUX")
-
     # Postgre
     REMOTE_PG_HOST: str = "127.0.0.1"
     REMOTE_PG_PORT: int = 27017
@@ -75,14 +65,8 @@ class Settings(BaseSettings):
     NEWS_FETCH_CRON: str = "0 * * * *"  # 每小时
     DEFAULT_VECTOR_DIM: int = 32
 
-    # —— 调度 Cron（分 时 日 月 周）——
-    CRON_MARKETAUX_US: str = Field("0 * * * *", env="CRON_MARKETAUX_US")
-    CRON_MARKETAUX_IN: str = Field("10 * * * *", env="CRON_MARKETAUX_IN")
-    CRON_RSS_ALL: str = Field("*/15 * * * *", env="CRON_RSS_ALL")
-
     EMBEDDING_PROVIDER: str = Field("openai", env="EMBEDDING_PROVIDER")
     ST_MODEL: str = Field("sentence-transformers/all-MiniLM-L6-v2", env="ST_MODEL")
-    DEFAULT_VECTOR_DIM: int = Field(64, env="DEFAULT_VECTOR_DIM")
 
     PROJECTION_METHOD: str = Field("srp", env="PROJECTION_METHOD")  # srp | none | pca(后续)
     PROJECTION_DIM: int = Field(64, env="PROJECTION_DIM")
@@ -94,16 +78,12 @@ class Settings(BaseSettings):
 
 
     LLM_PROVIDER: str = Field("openai", env="LLM_PROVIDER")
-    
-    NEWS_FETCH_CRON: str = "0 * * * *"  # 每小时
-    # DEFAULT_VECTOR_DIM: int = 32
 
     # 运行环境/调试
     ENV: str = Field("dev", env="ENV")        # dev | prod
     DEBUG: bool = Field(True, env="DEBUG")     # True: 输出更详细错误/开启调试路由
 
     # LLM Setting
-    LLM_PROVIDER: str = Field("deepseek_openai", alias="LLM_PROVIDER")
     LLM_OPENAI_BASE: str = Field("http://127.0.0.1:8000/v1", alias="LLM_OPENAI_BASE")
     LLM_OPENAI_API_KEY: str = Field("sk-local-placeholder", alias="LLM_OPENAI_API_KEY")
     LLM_MODEL: str = Field("deepseek-8b", alias="LLM_MODEL")

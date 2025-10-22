@@ -1,29 +1,12 @@
-from app.config import settings
-from app.adapters.db.news_repo_mongo import NewsRepoMongo
-# from app.adapters.db.user_repo_mongo import UserRepoMongo
-# from app.adapters.db.user_repo import UserRepo
-from app.config import settings
+from app.adapters.db.user_repo import UserRepo
 from sqlalchemy.orm.session import Session
 from fastapi import Depends
 from pymongo.database import Database
-from app.adapters.db.database_client import get_postgres_session,get_mongo_db
-from app.adapters.db.user_repo import UserRepo
-from app.adapters.db.news_repo import NewsRepo
 from app.adapters.llm.openai_llm import OpenAICompatLLM
-from app.adapters.vector.mongo_vector_index import MongoVectorIndex
-from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
-from app.ports.storage import UserRepoPort
 from app.services.auth_service import AuthService
+from app.services.stock_recommender import MultiObjectiveRecommender
+from app.services.stock_service import StockService
 from app.services.user_service import UserService
-# from config import settings
-from app.adapters.db.news_repo_mongo import NewsRepoMongo
-from app.adapters.vector.mongo_vector_index import MongoVectorIndex
-from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
-from app.services.news_service import NewsService
-from app.services.rec_service import RecService
-from app.services.rag_service import RagService
-from app.services.forecast_service import ForecastService
-
 
 from config import settings
 from adapters.db.news_repo import NewsRepo
@@ -33,18 +16,17 @@ from services.news_service import NewsService
 from services.rec_service import RecService
 from services.rag_service import RagService
 from services.forecast_service import ForecastService
-from adapters.db.database_client import get_mongo_db, get_postgres_db
+from adapters.db.database_client import get_mongo_db, get_postgres_session
 
 
-# def get_user_repo() -> UserRepo:
-#     return UserRepo()
+def get_user_repo() -> UserRepo:
+    return UserRepo()
 
 def get_auth_service():
     return AuthService(repo=get_user_repo())
 
 def get_user_service(
-        db: Session = Depends(get_postgres_session),
-        embedder = Depends(get_embedder),):
+        db: Session = Depends(get_postgres_session),):
     return UserService(db=db, repo=get_user_repo(), embedder=embedder, dim=32)
 
 def get_stock_service(

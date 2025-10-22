@@ -1,29 +1,15 @@
 # app/main.py
 from __future__ import annotations
+
+import re
 from contextlib import asynccontextmanager
-from app.jobs.scheduler import create_scheduler
-
-# —— 依赖注入：全局单例（为了让 routers 通过 app.main.svc 获取服务实例）——
-from app.adapters.embeddings.hash_embedder import HashingEmbedder
-from app.adapters.embeddings.projecting_embedder import ProjectingEmbedder  # NEW
-
-# from app.adapters.embeddings.openai_embedder import OpenAIEmbedder
-
-from app.repositories.mongo_repos import MongoNewsRepo, MongoEventRepo, MongoProfileRepo
-from app.repositories.pg_profile_repo import PgProfileRepo
-from app.repositories.inmemory import InMemoryNewsRepo, InMemoryProfileRepo, InMemoryEventRepo
-
-from app.services.news_service import NewsService
-from app.domain.models import NewsItem
-from app.utils.news_seed import SEED_NEWS
-from contextlib import asynccontextmanager
+from typing import Optional
 
 from app.core.errors import http_exception_handler, validation_exception_handler, generic_exception_handler
 from app.core.middleware import RequestContextMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from __future__ import annotations
 import uvicorn
 import logging
 from fastapi import FastAPI
@@ -36,7 +22,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.api.v1.news_router import router as news_router
-from app.api.v1.user_router import router as user_router
 from app.api.v1.rec_router import router as rec_router
 from app.api.v1.rag_router import router as rag_router
 from app.api.v1.forecast_router import router as forecast_router
@@ -44,7 +29,6 @@ from app.api.v1.stocks_router import router as stocks_router
 
 from app.api.v1.auth_router import router as auth_router
 from app.api.v1.user_router import router as user_router
-from app.utils.healthy import check_database_connection
 
 
 # 配置日志
@@ -161,7 +145,7 @@ async def lifespan(app: FastAPI):
     """
     仅负责开启/关闭 SSH 隧道（保持全局 svc 不变，避免和推荐系统 DI 冲突）
     """
-    async with init_mongo_via_ssh(), init_postgres_via_ssh():
+    async with init_mongo_via_ssh(), init_postgres_sync():
         # 启动阶段
         user_repo = UserRepo()
         await user_repo.ensure_indexes()
