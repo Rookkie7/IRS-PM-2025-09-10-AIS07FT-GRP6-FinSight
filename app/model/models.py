@@ -28,6 +28,7 @@ class UserCreate(UserBase):
     interests: List[str] = []
     sectors: List[str] = []  # 关注行业
     tickers: List[str] = []  # 关注股票
+    investment_preference: Dict[str,float] = {}
 
 class UserInDB(UserBase):
     id: Optional[str] = None

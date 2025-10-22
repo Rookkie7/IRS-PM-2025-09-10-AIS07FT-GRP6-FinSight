@@ -1,67 +1,375 @@
+# app/services/rag_service.py
 from __future__ import annotations
+from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+import uuid
+import httpx
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from typing import List, Dict
-from app.adapters.rag.retriever import Retriever
-from app.adapters.rag.ranker import SimpleRanker
-from app.adapters.rag.prompt_templates import build_finance_prompt
-from app.ports.llm import LLMProviderPort
-from app.ports.vector_index import VectorIndexPort
-from app.adapters.db.news_repo import NewsRepo
-from app.ports.embedding import EmbeddingProviderPort
+from app.adapters.db.database_client import get_mongo_db
+from app.adapters.db.rag_conversation_repo import RagConversationRepo
+from app.config import settings
+
+def _split_csv(s: Optional[str]) -> List[str]:
+    if not s:
+        return []
+    return [x.strip() for x in s.split(",") if x.strip()]
 
 class RagService:
+    """
+    Minimal RAG service that proxies chat to a locally deployed RagFlow (OpenAI-compatible) backend.
+
+    Responsibilities:
+      - Create a chat session in RagFlow when no session_id is provided
+      - Send a non-streaming completion request to RagFlow
+      - Normalize the response into {session_id, answer, citations}
+      - Fetch simple message history from RagFlow (best-effort)
+    """
+
     def __init__(
         self,
-        index: VectorIndexPort,
-        news_repo: NewsRepo,
-        query_embedder: EmbeddingProviderPort,
-        llm: LLMProviderPort,
-        dim: int = 32,
-    ):
-        self.index = index
-        self.news_repo = news_repo
-        self.query_embedder = query_embedder
-        self.llm = llm
-        self.dim = dim
-        self.retriever = Retriever(index, dim=dim)
-        self.ranker = SimpleRanker(alpha=0.8, half_life_hours=72)
+        db: AsyncIOMotorDatabase,
+        *,
+        repo: Optional[RagConversationRepo] = None,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: Optional[float] = None,
+        history_window: Optional[int] = None,
+    ) -> None:
+        self.db = db
+        self.repo = repo or RagConversationRepo()
+        self.base_url = (base_url or settings.RAGFLOW_BASE_URL or "http://localhost").rstrip("/")
+        self.api_key = api_key or settings.RAGFLOW_API_KEY or ""
+        self.model = model or getattr(settings, "RAGFLOW_MODEL", None) or "deepseek-r1:8b"
+        self.timeout = timeout or getattr(settings, "RAGFLOW_TIMEOUT", 15.0)
+        # 一次请求带入 RagFlow 的历史轮数（只取最近 N 条）
+        self.history_window = history_window or getattr(settings, "RAG_HISTORY_WINDOW", 20)
 
-    async def answer(
-        self,
-        query_text: str | None = None,
-        query_vector: List[float] | None = None,
-        k: int = 5,
-        temperature: float = 0.2,
-        max_tokens: int = 512,
-        filters: dict | None = None,
-    ) -> dict:
-        # 1) searching vector
-        if query_vector is None:
-            if not query_text:
-                raise ValueError("either query_text or query_vector must be provided")
-            vecs = await self.query_embedder.embed([query_text], dim=self.dim)
-            query_vector = vecs[0]
+    def _build_prompt_config(
+            self,
+            *,
+            prompt_text: Optional[str] = None,
+            top_n: Optional[int] = None,
+            similarity_threshold: Optional[float] = None,
+            keywords_similarity_weight: Optional[float] = None,
+            show_quote: Optional[bool] = None,
+            refine_multiturn: Optional[bool] = None,
+            rerank_model: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        返回 RagFlow /api/v1/chats 的 prompt 配置对象，并根据 prompt 是否包含 {knowledge}
+        自动决定是否发送 variables=[{"key":"knowledge","optional":false}]，以避免 RagFlow 的参数校验错误。
+        """
+        final_prompt =getattr(settings, "RAGFLOW_PROMPT_TEXT")
+        print(final_prompt)
+        cfg: Dict[str, Any] = {
+            "empty_response": "Sorry! No relevant content was found in the knowledge base!",
+            "opener": "Hi! I'm your assistant. What can I do for you?",
+            "prompt": final_prompt,
+            "top_n": top_n if top_n is not None else settings.RAGFLOW_PROMPT_TOP_N,
+            "similarity_threshold": (
+                similarity_threshold
+                if similarity_threshold is not None
+                else settings.RAGFLOW_PROMPT_SIMILARITY_THRESHOLD
+            ),
+            "keywords_similarity_weight": (
+                keywords_similarity_weight
+                if keywords_similarity_weight is not None
+                else settings.RAGFLOW_PROMPT_KW_WEIGHT
+            ),
+            "show_quote": show_quote if show_quote is not None else settings.RAGFLOW_PROMPT_SHOW_QUOTE,
+            "refine_multiturn": (
+                refine_multiturn
+                if refine_multiturn is not None
+                else settings.RAGFLOW_PROMPT_REFINE_MULTITURN
+            ),
+            "rerank_model": rerank_model or "",
+            "tts": False,
+        }
 
-        # 2) Retrieval Candidates
-        hits = await self.retriever.retrieve(query_vector, top_k=max(20, k*3), filters=filters)
+        # 仅当 prompt 文本里真的引用了 {knowledge} 时，才声明该变量，避免“Parameter 'knowledge' is not used”
+        if "{knowledge" in final_prompt:
+            cfg["variables"] = [{"key": "knowledge", "optional": False}]
 
-        # 3) Pull the original text (one-time batch get)
-        ids = [hid for hid, _ in hits]
-        docs = await self.news_repo.get_many(ids)  # 需要在 repo 中实现 get_many(ids) 方法
-        id2doc: Dict[str, dict] = {str(d["_id"]): d for d in docs}
+        return cfg
 
-        # 4) rerank
-        reranked = self.ranker.rerank(hits, id2doc, top_k=k)
-        contexts = [id2doc[_id] for _id, _ in reranked if _id in id2doc]
+    async def list_datasets(self) -> List[Dict[str, Any]]:
+        url = f"{self.base_url}/api/v1/datasets"
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.get(url, headers=self._headers())
+        resp.raise_for_status()
+        j = resp.json()
+        if isinstance(j, dict) and j.get("code") == 0 and isinstance(j.get("data"), list):
+            # 仅回传必要字段
+            out = []
+            for it in j["data"]:
+                if not isinstance(it, dict):
+                    continue
+                out.append({
+                    "id": it.get("id"),
+                    "name": it.get("name"),
+                    "description": it.get("description", ""),
+                })
+            return out
+        # 兜底：直接返回原始 data
+        return j if isinstance(j, list) else j.get("data", [])
 
-        # 5) Constructing prompt words & tuning LLM
-        prompt = build_finance_prompt(question=query_text or "N/A", contexts=contexts)
-        answer = await self.llm.generate(prompt, temperature=temperature, max_tokens=max_tokens)
-
-        # 6) Back to Answer + Quote
-        citations = [
-            {"id": _id, "score": score, "title": id2doc.get(_id, {}).get("title", "")}
-            for _id, score in reranked
-            if _id in id2doc
+    async def list_models(self) -> List[str]:
+        # 统一尝试常见两个端点
+        candidates = [
+            f"{self.base_url}/api/v1/models",
+            f"{self.base_url}/api/llm/models",
         ]
-        return {"answer": answer, "citations": citations}
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            last_error = None
+            for url in candidates:
+                try:
+                    resp = await client.get(url, headers=self._headers())
+                    if resp.status_code == 404:
+                        continue
+                    resp.raise_for_status()
+                    j = resp.json()
+                    # 兼容：返回可能是 {code:0, data:[{model_name:"..."}, ...]}
+                    if isinstance(j, dict) and "data" in j:
+                        data = j["data"]
+                    else:
+                        data = j
+                    names: List[str] = []
+                    if isinstance(data, list):
+                        for it in data:
+                            if isinstance(it, str):
+                                names.append(it)
+                            elif isinstance(it, dict):
+                                # 常见字段：model / model_name / name
+                                name = it.get("model") or it.get("model_name") or it.get("name")
+                                if name:
+                                    names.append(str(name))
+                    return sorted(set(names))
+                except Exception as e:
+                    last_error = e
+            # 所有端点都失败
+            if last_error:
+                raise last_error
+            return []
+
+    # ------------------------
+    # Public API
+    # ------------------------
+    async def chat(
+            self,
+            *,
+            question: str,
+            session_id: Optional[str] = None,
+            user_id: Optional[str] = None,
+            model: Optional[str] = 'deepseek-r1:8b',
+            dataset_ids: Optional[List[str]] = None,
+            embedding_model: Optional[str] = 'bge-m3',
+            rerank_model: Optional[str] = None,
+            prompt_text: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if not question or not question.strip():
+            raise ValueError("question must not be empty")
+
+        # 1) 如果没传 session_id，先在 RagFlow 里创建 chat（可绑定知识库 & 模型）
+        chat_id = session_id
+        if not chat_id:
+            chat_id = await self._ensure_chat_session(
+                user_id=user_id,
+                model_name=model,
+                dataset_ids=dataset_ids,
+                embedding_model=embedding_model,
+                rerank_model=rerank_model,
+                prompt_text=prompt_text
+            )
+            await self.repo.start_session(session_id=chat_id)
+
+        # 2) 带入最近 N 条上下文 + 当前问题
+        history = await self.repo.get_messages(chat_id, limit=self.history_window)
+        messages: List[Dict[str, str]] = []
+        for m in history:
+            role = str(m.get("role", "") or "user")
+            content = str(m.get("content", "") or "")
+            if content:
+                messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": question})
+
+        # 3) 调 RagFlow OpenAI 兼容接口
+        payload = {
+            "model": model or self.model,
+            "messages": messages,
+            "stream": False,
+        }
+        url = f"{self.base_url}/api/v1/chats_openai/{chat_id}/chat/completions"
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(url, headers=self._headers(), json=payload)
+        except httpx.ReadTimeout as e:
+            raise TimeoutError(str(e))
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"RagFlow HTTP error: {e}")
+
+        data = self._parse_response(resp, chat_id)
+
+        # 4) 本地持久化对话
+        try:
+            await self.repo.append_message(chat_id, role="user", content=question, citations=None)
+            await self.repo.append_message(chat_id, role="assistant", content=data.get("answer", ""),
+                                           citations=data.get("citations", []))
+        except Exception:
+            pass
+
+        return data
+
+    async def history(self, session_id: str) -> List[Dict[str, Any]]:
+        if not session_id:
+            return []
+        # 直接返回本地保存的历史
+        return await self.repo.list_history(session_id, limit=self.history_window)
+
+    # ------------------------
+    # Internals
+    # ------------------------
+    async def _ensure_chat_session(
+            self,
+            *,
+            user_id: Optional[str],
+            dataset_ids: Optional[List[str]] = None,
+            model_name: Optional[str] = None,
+            prompt_text: Optional[str] = None,
+            # prompt 细粒度开关
+            top_n: Optional[int] = None,
+            similarity_threshold: Optional[float] = None,
+            keywords_similarity_weight: Optional[float] = None,
+            show_quote: Optional[bool] = None,
+            refine_multiturn: Optional[bool] = None,
+            # 新增：可选 Embedding 模型、Rerank 模型
+            embedding_model: Optional[str] = None,
+            rerank_model: Optional[str] = None
+    ) -> str:
+        """
+        显式在 RagFlow 创建 chat，支持：
+          - 选择 LLM（model_name）
+          - 选择 Embedding 模型（embedding_model）
+          - 选择 Rerank 模型（rerank_model）
+          - 自定义 prompt（自动处理 variables 与 {knowledge} 占位符一致）
+        """
+        base = self.base_url.rstrip("/")
+        url = f"{base}/api/v1/chats"
+
+        name_prefix = getattr(settings, "RAGFLOW_CHAT_NAME_PREFIX", "chat") or "chat"
+        name = f"{name_prefix}-{user_id or 'anon'}-{uuid.uuid4().hex[:6]}"
+
+        # --- 组装 payload（仅发送 RagFlow 文档明确支持的字段） ---
+        payload: Dict[str, Any] = {"name": name}
+
+        if dataset_ids:
+            payload["dataset_ids"] = dataset_ids
+
+        if model_name or self.model:
+            payload["llm"] = {"model_name": model_name or self.model}
+
+        # 一些 RagFlow 版本允许在 chat 级别指定 embedding 模型；若后端忽略也不会报错
+        if embedding_model:
+            payload["embedding_model"] = embedding_model
+
+        # 构造 prompt；若你的后端版本对 prompt 严格校验，就按 _build_prompt_config 的逻辑生成
+        prompt_cfg = self._build_prompt_config(
+            prompt_text=prompt_text,
+            top_n=top_n,
+            similarity_threshold=similarity_threshold,
+            keywords_similarity_weight=keywords_similarity_weight,
+            show_quote=show_quote,
+            refine_multiturn=refine_multiturn,
+            rerank_model=rerank_model
+        )
+        payload["prompt"] = prompt_cfg
+
+        async def do_create(p: dict) -> Optional[str]:
+            print(p)
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(url, headers=self._headers(), json=p)
+
+            if resp.status_code == 403:
+                j = resp.json()
+                msg = j.get("message") or j.get("error") or "forbidden"
+                raise PermissionError(msg)
+
+            if resp.status_code >= 400:
+                raise RuntimeError(f"RagFlow create-chat http {resp.status_code}: {resp.text}")
+
+            j = resp.json()
+            print(j)
+            code = j.get("code")
+            if code == 0 and isinstance(j.get("data"), dict):
+                cid = j["data"].get("id") or j["data"].get("chat_id")
+                if cid:
+                    return str(cid)
+
+            # 102：常见为重名；也可能是某些参数校验不通过
+            if code == 102:
+                return None
+
+            raise RuntimeError(f"RagFlow create-chat failed: {j}")
+
+        # 首次尝试
+        cid = await do_create(payload)
+        if cid:
+            return cid
+
+        # 若返回 102（重名/轻微校验），改名重试一次
+        payload["name"] = f"{name}-r{uuid.uuid4().hex[:4]}"
+        cid = await do_create(payload)
+        if cid:
+            return cid
+
+        # 兜底：去掉 prompt 再试一次（某些后端对 prompt 校验严格）
+        safe_payload = {k: v for k, v in payload.items() if k != "prompt"}
+        cid = await do_create(safe_payload)
+        if cid:
+            return cid
+
+        raise RuntimeError("RagFlow create-chat response missing 'data.id'")
+
+    def _parse_response(self, resp: httpx.Response, chat_id: str) -> Dict[str, Any]:
+        if resp.status_code == 403:
+            try:
+                j = resp.json()
+                msg = j.get("message") or j.get("error") or "forbidden"
+            except Exception:
+                msg = "forbidden"
+            raise PermissionError(msg)
+
+        if resp.status_code >= 500:
+            raise RuntimeError(f"RagFlow server error: {resp.status_code}")
+
+        j = resp.json()
+        answer: str = ""
+        citations: List[Dict[str, Any]] = []
+
+        if isinstance(j, dict):
+            if "answer" in j:
+                answer = str(j.get("answer") or "")
+                raw_cites = j.get("citations")
+                if isinstance(raw_cites, list):
+                    citations = raw_cites
+            elif "choices" in j and isinstance(j["choices"], list) and j["choices"]:
+                choice0 = j["choices"][0]
+                if isinstance(choice0, dict):
+                    msg = choice0.get("message") or {}
+                    if isinstance(msg, dict):
+                        answer = str(msg.get("content") or "")
+
+        return {"session_id": chat_id, "answer": answer, "citations": citations}
+
+    def _headers(self) -> Dict[str, str]:
+        hdrs = {"Content-Type": "application/json"}
+        if self.api_key:
+            hdrs["Authorization"] = f"Bearer {self.api_key}"
+        return hdrs
+
+async def get_rag_service_instance() -> RagService:
+    db = get_mongo_db()
+    repo = RagConversationRepo()
+    return RagService(db, repo=repo)

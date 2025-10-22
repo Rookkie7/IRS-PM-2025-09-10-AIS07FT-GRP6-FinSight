@@ -1,3 +1,5 @@
+import textwrap
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 
@@ -47,6 +49,55 @@ class Settings(BaseSettings):
     LLM_OPENAI_BASE: str = Field("http://127.0.0.1:8000/v1", alias="LLM_OPENAI_BASE")
     LLM_OPENAI_API_KEY: str = Field("sk-local-placeholder", alias="LLM_OPENAI_API_KEY")
     LLM_MODEL: str = Field("deepseek-8b", alias="LLM_MODEL")
+
+    # Rag flow
+    RAGFLOW_BASE_URL: str = Field(..., env="RAGFLOW_BASE_URL")  # RAGFlow 的 HTTP 服务地址
+    RAGFLOW_API_KEY: str = Field(..., env="RAGFLOW_API_KEY")
+    RAGFLOW_MODEL: str = Field(..., env="RAGFLOW_MODEL")
+    RAGFLOW_APP_ID: str = ""  # RAGFlow 应用/流水线ID（如需要）
+    RAGFLOW_TIMEOUT: int = 60  # 超时时间(s)
+    RAG_MAX_HISTORY_TURNS: int = 8  # 多轮记忆条数上限（每次取尾部N轮）
+    RAGFLOW_DATASET_IDS: str = Field("", env="RAGFLOW_DATASET_IDS")  # 逗号分隔
+    RAGFLOW_CHAT_NAME_PREFIX: str = Field("chat", env="RAGFLOW_CHAT_NAME_PREFIX")
+
+    RAGFLOW_PROMPT_TEXT: str = textwrap.dedent('''You are an expert financial research assistant. Your goal is to provide accurate, well-reasoned, and context-aware answers using the retrieved knowledge base and your own analytical ability.
+        ### Instruction:
+        1. **Primary Source:** 
+           Always prioritize and summarize information from the provided knowledge base below.
+           Clearly cite or reference facts when relevant.
+        2. **Fallback Reasoning:**
+           If the knowledge base does **not** contain enough information to answer completely,
+           use your own reasoning and general financial knowledge to construct a helpful,
+           logically sound response — but make it clear that you are extending beyond the current data.
+        3. **Context Awareness:**
+           Consider the full conversation history, user’s intent, and previous topics to ensure
+           continuity in tone and content.
+        4. **Transparency:**
+           When you rely mainly on your own reasoning, start your answer with a short disclaimer like:
+           “Based on general market understanding…” or “While this isn’t in the current knowledge base, here’s what is known…”
+        
+        5. **Answer Format:**
+           - Be concise, factual, and structured.
+           - Use bullet points or short paragraphs.
+           - Include numbers, dates, or ratios when applicable.
+           - If appropriate, provide both *summary* and *implications*.
+        ---
+        
+        Here is the current knowledge base:
+        
+        {knowledge}
+        
+        When relevant, include market implications or actionable insights (e.g., how the information could affect stock prices, sector performance, or macroeconomic indicators).
+        
+        (If the above section is empty or irrelevant, follow the Fallback Reasoning guideline.)''')
+
+    RAGFLOW_PROMPT_TOP_N: int = 6
+    RAGFLOW_PROMPT_SIMILARITY_THRESHOLD: float = 0.2
+    RAGFLOW_PROMPT_KW_WEIGHT: float = 0.7
+    RAGFLOW_PROMPT_SHOW_QUOTE: bool = True
+    RAGFLOW_PROMPT_REFINE_MULTITURN: bool = True
+    # （可选）对 OpenAI messages 头上再加一条 system，双保险
+    RAGFLOW_CHAT_SYSTEM: str | None = None
 
     @model_validator(mode="after")
     def _validate_mongo(self):
