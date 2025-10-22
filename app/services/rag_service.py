@@ -47,32 +47,26 @@ class RagService:
         self.history_window = history_window or getattr(settings, "RAG_HISTORY_WINDOW", 20)
 
     def _build_prompt_config(
-        self,
-        *,
-        prompt_text: Optional[str] = None,
-        top_n: Optional[int] = None,
-        similarity_threshold: Optional[float] = None,
-        keywords_similarity_weight: Optional[float] = None,
-        show_quote: Optional[bool] = None,
-        refine_multiturn: Optional[bool] = None
+            self,
+            *,
+            prompt_text: Optional[str] = None,
+            top_n: Optional[int] = None,
+            similarity_threshold: Optional[float] = None,
+            keywords_similarity_weight: Optional[float] = None,
+            show_quote: Optional[bool] = None,
+            refine_multiturn: Optional[bool] = None,
+            rerank_model: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        返回 RagFlow /api/v1/chats 的 prompt 配置对象。
-        这些键名与 RagFlow 返回的结构一致（empty_response / opener 可按需设置）。
+        返回 RagFlow /api/v1/chats 的 prompt 配置对象，并根据 prompt 是否包含 {knowledge}
+        自动决定是否发送 variables=[{"key":"knowledge","optional":false}]，以避免 RagFlow 的参数校验错误。
         """
-        # 选择优先级：调用参数 > settings 默认 > 合理兜底
-        return {
-            "prompt_type": "simple",  # 如 UI 使用 simple prompt
+        final_prompt =getattr(settings, "RAGFLOW_PROMPT_TEXT")
+        print(final_prompt)
+        cfg: Dict[str, Any] = {
             "empty_response": "Sorry! No relevant content was found in the knowledge base!",
             "opener": "Hi! I'm your assistant. What can I do for you?",
-            "prompt": prompt_text
-                or settings.RAGFLOW_PROMPT_TEXT
-                or (
-                    "You are an intelligent assistant. Summarize the content of the knowledge base to answer the question. "
-                    "When all knowledge base content is irrelevant, your answer must include: "
-                    "\"The answer you are looking for is not found in the knowledge base!\" "
-                    "Answers need to consider chat history.\nHere is the knowledge base:\n{knowledge}\nThe above is the knowledge base."
-                ),
+            "prompt": final_prompt,
             "top_n": top_n if top_n is not None else settings.RAGFLOW_PROMPT_TOP_N,
             "similarity_threshold": (
                 similarity_threshold
@@ -90,11 +84,15 @@ class RagService:
                 if refine_multiturn is not None
                 else settings.RAGFLOW_PROMPT_REFINE_MULTITURN
             ),
-            "rerank_model": "",
+            "rerank_model": rerank_model or "",
             "tts": False,
-            # simple 模板下建议显式给出占位符变量
-            "variables": [{"key": "knowledge", "optional": False}],
         }
+
+        # 仅当 prompt 文本里真的引用了 {knowledge} 时，才声明该变量，避免“Parameter 'knowledge' is not used”
+        if "{knowledge" in final_prompt:
+            cfg["variables"] = [{"key": "knowledge", "optional": False}]
+
+        return cfg
 
     async def list_datasets(self) -> List[Dict[str, Any]]:
         url = f"{self.base_url}/api/v1/datasets"
@@ -164,8 +162,11 @@ class RagService:
             question: str,
             session_id: Optional[str] = None,
             user_id: Optional[str] = None,
-            model: Optional[str] = None,
+            model: Optional[str] = 'deepseek-r1:8b',
             dataset_ids: Optional[List[str]] = None,
+            embedding_model: Optional[str] = 'bge-m3',
+            rerank_model: Optional[str] = None,
+            prompt_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not question or not question.strip():
             raise ValueError("question must not be empty")
@@ -175,10 +176,12 @@ class RagService:
         if not chat_id:
             chat_id = await self._ensure_chat_session(
                 user_id=user_id,
-                model_override=model,
-                dataset_ids_override=dataset_ids
+                model_name=model,
+                dataset_ids=dataset_ids,
+                embedding_model=embedding_model,
+                rerank_model=rerank_model,
+                prompt_text=prompt_text
             )
-            # 用 RagFlow 的 chat_id 作为我方会话 id，并在本地建档
             await self.repo.start_session(session_id=chat_id)
 
         # 2) 带入最近 N 条上下文 + 当前问题
@@ -229,21 +232,28 @@ class RagService:
     # Internals
     # ------------------------
     async def _ensure_chat_session(
-        self,
-        *,
-        user_id: Optional[str],
-        dataset_ids: Optional[List[str]] = None,
-        model_name: Optional[str] = None,
-        prompt_text: Optional[str] = None,
-        # 下面这些是 prompt 的细节可选覆盖（按需传）
-        top_n: Optional[int] = None,
-        similarity_threshold: Optional[float] = None,
-        keywords_similarity_weight: Optional[float] = None,
-        show_quote: Optional[bool] = None,
-        refine_multiturn: Optional[bool] = None
+            self,
+            *,
+            user_id: Optional[str],
+            dataset_ids: Optional[List[str]] = None,
+            model_name: Optional[str] = None,
+            prompt_text: Optional[str] = None,
+            # prompt 细粒度开关
+            top_n: Optional[int] = None,
+            similarity_threshold: Optional[float] = None,
+            keywords_similarity_weight: Optional[float] = None,
+            show_quote: Optional[bool] = None,
+            refine_multiturn: Optional[bool] = None,
+            # 新增：可选 Embedding 模型、Rerank 模型
+            embedding_model: Optional[str] = None,
+            rerank_model: Optional[str] = None
     ) -> str:
         """
-        显式在 RagFlow 创建 chat，并把自定义 prompt 一起写进去。
+        显式在 RagFlow 创建 chat，支持：
+          - 选择 LLM（model_name）
+          - 选择 Embedding 模型（embedding_model）
+          - 选择 Rerank 模型（rerank_model）
+          - 自定义 prompt（自动处理 variables 与 {knowledge} 占位符一致）
         """
         base = self.base_url.rstrip("/")
         url = f"{base}/api/v1/chats"
@@ -251,56 +261,75 @@ class RagService:
         name_prefix = getattr(settings, "RAGFLOW_CHAT_NAME_PREFIX", "chat") or "chat"
         name = f"{name_prefix}-{user_id or 'anon'}-{uuid.uuid4().hex[:6]}"
 
-        payload: Dict[str, Any] = {
-            "name": name,
-            "prompt": self._build_prompt_config(
-                prompt_text=prompt_text,
-                top_n=top_n,
-                similarity_threshold=similarity_threshold,
-                keywords_similarity_weight=keywords_similarity_weight,
-                show_quote=show_quote,
-                refine_multiturn=refine_multiturn
-            ),
-        }
+        # --- 组装 payload（仅发送 RagFlow 文档明确支持的字段） ---
+        payload: Dict[str, Any] = {"name": name}
+
         if dataset_ids:
             payload["dataset_ids"] = dataset_ids
-        if (model_name or self.model):
+
+        if model_name or self.model:
             payload["llm"] = {"model_name": model_name or self.model}
 
+        # 一些 RagFlow 版本允许在 chat 级别指定 embedding 模型；若后端忽略也不会报错
+        if embedding_model:
+            payload["embedding_model"] = embedding_model
+
+        # 构造 prompt；若你的后端版本对 prompt 严格校验，就按 _build_prompt_config 的逻辑生成
+        prompt_cfg = self._build_prompt_config(
+            prompt_text=prompt_text,
+            top_n=top_n,
+            similarity_threshold=similarity_threshold,
+            keywords_similarity_weight=keywords_similarity_weight,
+            show_quote=show_quote,
+            refine_multiturn=refine_multiturn,
+            rerank_model=rerank_model
+        )
+        payload["prompt"] = prompt_cfg
+
         async def do_create(p: dict) -> Optional[str]:
+            print(p)
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(url, headers=self._headers(), json=p)
 
             if resp.status_code == 403:
-                try:
-                    j = resp.json()
-                    msg = j.get("message") or j.get("error") or "forbidden"
-                except Exception:
-                    msg = "forbidden"
+                j = resp.json()
+                msg = j.get("message") or j.get("error") or "forbidden"
                 raise PermissionError(msg)
 
             if resp.status_code >= 400:
                 raise RuntimeError(f"RagFlow create-chat http {resp.status_code}: {resp.text}")
 
             j = resp.json()
+            print(j)
             code = j.get("code")
             if code == 0 and isinstance(j.get("data"), dict):
                 cid = j["data"].get("id") or j["data"].get("chat_id")
                 if cid:
                     return str(cid)
-            if code == 102:  # name 冲突
+
+            # 102：常见为重名；也可能是某些参数校验不通过
+            if code == 102:
                 return None
+
             raise RuntimeError(f"RagFlow create-chat failed: {j}")
 
-        # 首次
+        # 首次尝试
         cid = await do_create(payload)
         if cid:
             return cid
-        # 冲突重试
+
+        # 若返回 102（重名/轻微校验），改名重试一次
         payload["name"] = f"{name}-r{uuid.uuid4().hex[:4]}"
         cid = await do_create(payload)
         if cid:
             return cid
+
+        # 兜底：去掉 prompt 再试一次（某些后端对 prompt 校验严格）
+        safe_payload = {k: v for k, v in payload.items() if k != "prompt"}
+        cid = await do_create(safe_payload)
+        if cid:
+            return cid
+
         raise RuntimeError("RagFlow create-chat response missing 'data.id'")
 
     def _parse_response(self, resp: httpx.Response, chat_id: str) -> Dict[str, Any]:
