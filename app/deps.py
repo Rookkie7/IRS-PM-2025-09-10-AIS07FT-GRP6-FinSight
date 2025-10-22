@@ -7,6 +7,16 @@ from app.adapters.llm.openai_llm import OpenAICompatLLM
 from app.ports.storage import UserRepoPort
 from app.services.auth_service import AuthService
 from app.services.user_service import UserService
+from config import settings
+from adapters.db.news_repo import NewsRepo
+from adapters.vector.mongo_vector_index import MongoVectorIndex
+from adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
+from services.news_service import NewsService
+from services.rec_service import RecService
+from services.rag_service import RagService
+from app.services.forecast_service import ForecastService, ForecastConfig
+from app.adapters.db.price_provider_mongo import MongoStockPriceProvider
+from config import settings
 from app.services.stock_service import StockService
 # from config import settings
 from app.adapters.db.news_repo import NewsRepo
@@ -84,5 +94,10 @@ def get_rec_service():
 def get_rag_service():
     return RagService()
 
-def get_forecast_service():
-    return ForecastService()
+
+def get_price_provider():
+    return MongoStockPriceProvider(collection_name="stocks")
+
+def get_forecast_service(provider = Depends(get_price_provider)):
+    cfg = ForecastConfig(lookback_days=252, ma_window=20)
+    return ForecastService(price_provider=provider, cfg=cfg)
