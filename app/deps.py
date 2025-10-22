@@ -28,7 +28,7 @@ def get_auth_service():
 
 def get_user_service(
         db: Session = Depends(get_postgres_session),):
-    return UserService(db=db, repo=get_user_repo(), embedder=embedder, dim=32)
+    return UserService(db=db, repo=get_user_repo(), dim=20)
 
 def get_stock_service(
         postgres_db: Session = Depends(get_postgres_session),

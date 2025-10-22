@@ -1,30 +1,30 @@
 # app/adapters/db/database_client.py
+from __future__ import annotations
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Generator
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from fastapi import Request
+from starlette.datastructures import State
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sshtunnel import SSHTunnelForwarder
 
 from app.config import settings
 
-# ---- 全局句柄 ----
+# ---- 全局句柄（兜底用；首选从 app.state 读）----
 _tunnel: Optional[SSHTunnelForwarder] = None
 
 # Mongo
 _mongo_client: Optional[AsyncIOMotorClient] = None
 _mongo_db: Optional[AsyncIOMotorDatabase] = None
 
-# Postgres（同步）
+# Postgres（同步 SQLAlchemy）
 _pg_engine = None
 _SessionLocal: Optional[sessionmaker] = None
 
 
 def _start_ssh_tunnel() -> SSHTunnelForwarder:
-    """
-    启动 SSH 隧道，同时转发 MongoDB (27017) 和 PostgreSQL (5432)
-    """
     assert settings.SSH_HOST and settings.SSH_USER and settings.SSH_PEM_PATH, \
         "SSH_HOST/SSH_USER/SSH_PEM_PATH 必须配置"
 
@@ -32,12 +32,12 @@ def _start_ssh_tunnel() -> SSHTunnelForwarder:
         ssh_address_or_host=(settings.SSH_HOST, settings.SSH_PORT),
         ssh_username=settings.SSH_USER,
         ssh_pkey=settings.SSH_PEM_PATH,
-        remote_bind_addresses=[  # 索引 0: Mongo, 1: Postgres
+        remote_bind_addresses=[
             (settings.REMOTE_MONGO_HOST, settings.REMOTE_MONGO_PORT),
             (settings.REMOTE_PG_HOST, settings.REMOTE_PG_PORT),
         ],
         local_bind_addresses=[
-            (settings.LOCAL_MONGO_HOST, 0),  # 本地自动分配端口
+            (settings.LOCAL_MONGO_HOST, 0),
             (settings.LOCAL_PG_HOST, 0),
         ],
     )
@@ -50,7 +50,7 @@ def _start_ssh_tunnel() -> SSHTunnelForwarder:
     print(f"  → MongoDB:   {mongo_host}:{mongo_port} → {settings.REMOTE_MONGO_HOST}:{settings.REMOTE_MONGO_PORT}")
     print(f"  → PostgreSQL:{pg_host}:{pg_port}     → {settings.REMOTE_PG_HOST}:{settings.REMOTE_PG_PORT}")
 
-    # 可选：把端口写回 settings（后续其他地方想用也方便）
+    # 写回 settings，便于其它地方取到映射端口
     settings.LOCAL_MONGO_PORT = mongo_port
     settings.LOCAL_PG_PORT = pg_port
     return server
@@ -86,7 +86,6 @@ async def init_mongo_via_ssh():
             _mongo_client.close()
             _mongo_client = None
             _mongo_db = None
-        # 仅在本函数启动了隧道时才关闭（避免影响 PG）
         if started_tunnel_here and _tunnel:
             _tunnel.stop()
             _tunnel = None
@@ -107,12 +106,11 @@ def _build_sync_pg_url(host: str, port: int) -> str:
     )
 
 def _init_postgres_sync():
-    """创建同步 SQLAlchemy Engine 与 Session 工厂"""
+    """创建同步 SQLAlchemy Engine 与 Session 工厂（模块级兜底副本）"""
     global _pg_engine, _SessionLocal, _tunnel
 
     if settings.SSH_TUNNEL:
         if _tunnel is None:
-            # 如果 Mongo 还没开隧道，这里会新建并共享
             _tunnel = _start_ssh_tunnel()
         host, port = "127.0.0.1", _tunnel.local_bind_ports[1]
     else:
@@ -124,6 +122,7 @@ def _init_postgres_sync():
     _pg_engine = create_engine(url, pool_pre_ping=True, future=True)
     _SessionLocal = sessionmaker(bind=_pg_engine, autocommit=False, autoflush=False, class_=Session)
     print("✅ PostgreSQL sync engine initialized.")
+    return url  # 便于调试
 
 def _dispose_postgres_sync():
     global _pg_engine, _SessionLocal
@@ -136,22 +135,41 @@ def _dispose_postgres_sync():
 @asynccontextmanager
 async def init_postgres_sync():
     """
-    lifespan 里调用：初始化同步 SQLAlchemy（即使外层是 async 也没关系）
+    ✅ lifespan 里调用：
+       async with init_postgres_sync() as pg:
+           app.state.pg_session_factory = pg["SessionLocal"]
+           app.state.pg_engine = pg["engine"]
+           app.state.pg_pool = pg["pool"]
     """
-    _init_postgres_sync()
+    dsn = _init_postgres_sync()
     try:
-        yield
+        yield {
+            "engine": _pg_engine,
+            "SessionLocal": _SessionLocal,
+            "dsn": dsn,
+        }
     finally:
         _dispose_postgres_sync()
-        # 注意：不在这里停 SSH 隧道；由最后一个使用者关闭或统一在应用退出处关闭
-        # 如果你只在一个地方创建了 _tunnel，可在主 lifespan 退出时统一 _tunnel.stop()
+        # 隧道不要在这里停，由最外层统一关闭（若与 Mongo 复用）
 
+# ---------- 依赖注入：从 app.state 读取；读不到回退模块全局 ----------
+def _ensure_state(obj) -> State:
+    # 保险：部分测试环境/脚本对象可能没有 state
+    if not hasattr(obj, "state"):
+        obj.state = State()
+    return obj.state
 
-def get_postgres_session():
-    """FastAPI 依赖：提供同步 Session（线程池执行）"""
-    if _SessionLocal is None:
+def get_postgres_session(request: Request):
+    SessionLocal = getattr(getattr(request.app, "state", object()), "pg_session_factory", None)
+    if SessionLocal is None:
+        # 回退模块级（如果有人没用 lifespan 也能工作）
+        global _SessionLocal
+        SessionLocal = _SessionLocal
+
+    if SessionLocal is None:
         raise RuntimeError("PostgreSQL session factory 未初始化（请在 lifespan 里先调用 init_postgres_sync()）")
-    db = _SessionLocal()
+
+    db = SessionLocal()
     try:
         yield db
     finally:

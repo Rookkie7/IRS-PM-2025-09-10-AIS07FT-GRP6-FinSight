@@ -6,14 +6,12 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from app.core.errors import http_exception_handler, validation_exception_handler, generic_exception_handler
-from app.core.middleware import RequestContextMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import uvicorn
 import logging
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from app.adapters.db.database_client import init_mongo_via_ssh, init_postgres_sync, get_mongo_db
 from app.adapters.db.news_repo import NewsRepo, EventRepo
@@ -143,7 +141,9 @@ async def lifespan(app: FastAPI):
     """
     仅负责开启/关闭 SSH 隧道（保持全局 svc 不变，避免和推荐系统 DI 冲突）
     """
-    async with init_mongo_via_ssh(), init_postgres_sync():
+    async with init_mongo_via_ssh(), init_postgres_sync() as pg:
+        app.state.pg_engine = pg["engine"]
+        app.state.pg_session_factory = pg["SessionLocal"]  # ✅ 关键
         # 启动阶段
         user_repo = UserRepo()
         await user_repo.ensure_indexes()
