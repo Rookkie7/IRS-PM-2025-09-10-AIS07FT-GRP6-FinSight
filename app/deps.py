@@ -1,12 +1,13 @@
+from app.adapters.db.user_repo import UserRepo
 from sqlalchemy.orm.session import Session
 from fastapi import Depends
 from pymongo.database import Database
-from app.adapters.db.database_client import get_postgres_session,get_mongo_db
-from app.adapters.db.user_repo import UserRepo
 from app.adapters.llm.openai_llm import OpenAICompatLLM
-from app.ports.storage import UserRepoPort
 from app.services.auth_service import AuthService
+from app.services.stock_recommender import MultiObjectiveRecommender
+from app.services.stock_service import StockService
 from app.services.user_service import UserService
+
 from config import settings
 from adapters.db.news_repo import NewsRepo
 from adapters.vector.mongo_vector_index import MongoVectorIndex
@@ -14,31 +15,9 @@ from adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvid
 from services.news_service import NewsService
 from services.rec_service import RecService
 from services.rag_service import RagService
-from app.services.forecast_service import ForecastService, ForecastConfig
-from app.adapters.db.price_provider_mongo import MongoStockPriceProvider
-from config import settings
-from app.services.stock_service import StockService
-# from config import settings
-from app.adapters.db.news_repo import NewsRepo
-from app.adapters.vector.mongo_vector_index import MongoVectorIndex
-from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
-from app.services.news_service import NewsService
-from app.services.rec_service import RecService
-from app.services.rag_service import RagService
-from app.services.forecast_service import ForecastService
-from app.services.stock_recommender import MultiObjectiveRecommender
-from app.config import settings
+from services.forecast_service import ForecastService
+from adapters.db.database_client import get_mongo_db, get_postgres_session
 
-def get_query_embedder():
-    # You can also use OpenAI Embeddings; here we use the local SB model
-    return LocalEmbeddingProvider()
-
-def get_vector_index():
-    # Can be switched to pgvector_index.PgVectorIndex() according to settings.VECTOR_BACKEND
-    return MongoVectorIndex(collection_name="news")  # 你也可以为 stocks 建独立索引/集合
-
-def get_embedder():
-    return LocalEmbeddingProvider(model_name="all-MiniLM-L6-v2")  # 或 OpenAIEmbeddingProvider()
 
 def get_user_repo() -> UserRepo:
     return UserRepo()
@@ -47,8 +26,7 @@ def get_auth_service():
     return AuthService(repo=get_user_repo())
 
 def get_user_service(
-        db: Session = Depends(get_postgres_session),
-        embedder = Depends(get_embedder),):
+        db: Session = Depends(get_postgres_session),):
     return UserService(db=db, repo=get_user_repo(), embedder=embedder, dim=32)
 
 def get_stock_service(
@@ -76,6 +54,16 @@ def get_llm():
         # fallback
     return OpenAICompatLLM()
 
+def get_query_embedder():
+    # You can also use OpenAI Embeddings; here we use the local SB model
+    return LocalEmbeddingProvider()
+
+def get_vector_index():
+    # Can be switched to pgvector_index.PgVectorIndex() according to settings.VECTOR_BACKEND
+    return MongoVectorIndex(collection_name="news")  # 你也可以为 stocks 建独立索引/集合
+
+def get_embedder():
+    return LocalEmbeddingProvider(model_name="all-MiniLM-L6-v2")  # 或 OpenAIEmbeddingProvider()
 
 def get_news_index():
     return MongoVectorIndex(collection_name="news")

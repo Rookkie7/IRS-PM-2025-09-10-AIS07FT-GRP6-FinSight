@@ -4,13 +4,39 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, model_validator
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
     AUTH_SECRET_KEY: str = Field(alias="AUTH_SECRET_KEY")
     AUTH_ALGORITHM: str = Field("HS256", alias="AUTH_ALGORITHM")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(60 * 24, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
 
     APP_NAME: str = "Finsight"
+    MONGO_URI: str = Field(..., env="MONGO_URI")
+    MONGO_DB: str = Field("finsight", env="MONGO_DB")
+
+    # —— 新闻抓取主源 & 抓取参数 ——
+    MARKETAUX_API_KEY: str = Field("", env="MARKETAUX_API_KEY")  # 可先留空
+    WATCHLIST_FILE: str = Field("./watchlist.json", env="WATCHLIST_FILE")
+    MARKETAUX_DEFAULT_SYMBOLS: str = Field("", env="MARKETAUX_DEFAULT_SYMBOLS")
+
+    FETCH_QPS: float = Field(0.5, env="FETCH_QPS")                    # Marketaux 节流
+    DAILY_BUDGET_MARKETAUX: int = Field(80, env="DAILY_BUDGET_MARKETAUX")
+
+    RSS_QPS: float = Field(1.0, env="RSS_QPS")
+    RSS_SOURCES_US: str = Field(
+        "https://feeds.a.dj.com/rss/RSSMarketsMain.xml,https://www.reuters.com/finance/markets/rss",
+        env="RSS_SOURCES_US"
+    )
+    RSS_SOURCES_IN: str = Field(
+        "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms,https://www.livemint.com/rss/markets",
+        env="RSS_SOURCES_IN"
+    )
+
+    # —— 调度 Cron（分 时 日 月 周）——
+    CRON_MARKETAUX_US: str = Field("0 * * * *", env="CRON_MARKETAUX_US")
+    CRON_MARKETAUX_IN: str = Field("10 * * * *", env="CRON_MARKETAUX_IN")
+    CRON_RSS_ALL: str = Field("*/15 * * * *", env="CRON_RSS_ALL")
+
 
     # SSH 隧道相关
     SSH_TUNNEL: bool = Field(False, alias="SSH_TUNNEL")
@@ -26,9 +52,6 @@ class Settings(BaseSettings):
     LOCAL_MONGO_HOST: str = "127.0.0.1"
     LOCAL_MONGO_PORT: int = 0  # 0=随机
 
-    MONGO_URI: str | None = Field(default=None, alias="MONGO_URI")
-    MONGO_DB: str = "finsight"
-
     # Postgre
     REMOTE_PG_HOST: str = "127.0.0.1"
     REMOTE_PG_PORT: int = 27017
@@ -39,13 +62,28 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = Field(..., env="POSTGRES_PASSWORD")
     POSTGRES_DB: str = Field(..., env="POSTGRES_DB")
 
-    EMBEDDING_PROVIDER: str = Field("openai", env="EMBEDDING_PROVIDER")
-    VECTOR_BACKEND: str = Field("pgvector", env="VECTOR_BACKEND")  # mongo | pgvector
     NEWS_FETCH_CRON: str = "0 * * * *"  # 每小时
     DEFAULT_VECTOR_DIM: int = 32
 
+    EMBEDDING_PROVIDER: str = Field("openai", env="EMBEDDING_PROVIDER")
+    ST_MODEL: str = Field("sentence-transformers/all-MiniLM-L6-v2", env="ST_MODEL")
+
+    PROJECTION_METHOD: str = Field("srp", env="PROJECTION_METHOD")  # srp | none | pca(后续)
+    PROJECTION_DIM: int = Field(64, env="PROJECTION_DIM")
+    PROJECTION_SEED: int = Field(42, env="PROJECTION_SEED")
+
+    VECTOR_BACKEND: str = Field("pgvector", env="VECTOR_BACKEND")  # mongo | pgvector
+    PG_DSN: str = Field("postgresql://richsion@localhost:5432/finsight", env="PG_DSN")
+    RECENT_EXCLUDE_HOURS: int = Field(72, env="RECENT_EXCLUDE_HOURS")
+
+
+    LLM_PROVIDER: str = Field("openai", env="LLM_PROVIDER")
+
+    # 运行环境/调试
+    ENV: str = Field("dev", env="ENV")        # dev | prod
+    DEBUG: bool = Field(True, env="DEBUG")     # True: 输出更详细错误/开启调试路由
+
     # LLM Setting
-    LLM_PROVIDER: str = Field("deepseek_openai", alias="LLM_PROVIDER")
     LLM_OPENAI_BASE: str = Field("http://127.0.0.1:8000/v1", alias="LLM_OPENAI_BASE")
     LLM_OPENAI_API_KEY: str = Field("sk-local-placeholder", alias="LLM_OPENAI_API_KEY")
     LLM_MODEL: str = Field("deepseek-8b", alias="LLM_MODEL")
