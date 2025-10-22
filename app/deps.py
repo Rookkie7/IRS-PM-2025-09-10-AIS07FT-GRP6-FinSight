@@ -1,3 +1,4 @@
+from app.adapters.db.price_provider_mongo import MongoStockPriceProvider
 from app.adapters.db.user_repo import UserRepo
 from sqlalchemy.orm.session import Session
 from fastapi import Depends
@@ -15,7 +16,7 @@ from adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvid
 from services.news_service import NewsService
 from services.rec_service import RecService
 from services.rag_service import RagService
-from services.forecast_service import ForecastService
+from services.forecast_service import ForecastService, ForecastConfig
 from adapters.db.database_client import get_mongo_db, get_postgres_session
 
 

@@ -44,8 +44,6 @@ from app.repositories.pg_profile_repo import PgProfileRepo
 from app.services.news_service import NewsService
 # 为你的模块设置更详细的日志级别
 logging.getLogger("app.services.stock_recommender").setLevel(logging.DEBUG)
-
-
 # @asynccontextmanager
 # async def lifespan(app: FastAPI):
 #     """Lifespan context"""
