@@ -18,6 +18,7 @@ from app.adapters.db.news_repo import NewsRepo, EventRepo
 from app.adapters.db.user_repo import UserRepo
 from fastapi.middleware.cors import CORSMiddleware
 
+
 from app.config import settings
 from app.api.v1.news_router import router as news_router
 from app.api.v1.rec_router import router as rec_router
@@ -58,6 +59,9 @@ logging.getLogger("app.services.stock_recommender").setLevel(logging.DEBUG)
 
 
 import logging
+
+from app.utils.healthy import check_database_connection
+
 logging.getLogger("app.repos.mongo_news").setLevel(logging.WARNING)
 logging.getLogger("app.ingest").setLevel(logging.WARNING)
 logging.getLogger("app.rec.debug").setLevel(logging.WARNING)
