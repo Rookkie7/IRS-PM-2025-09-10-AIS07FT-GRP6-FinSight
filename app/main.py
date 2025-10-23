@@ -25,7 +25,7 @@ from app.api.v1.rec_router import router as rec_router
 from app.api.v1.rag_router import router as rag_router
 from app.api.v1.forecast_router import router as forecast_router
 from app.api.v1.stocks_router import router as stocks_router
-
+from app.api.v1.macro_router import router as macro_router
 from app.api.v1.auth_router import router as auth_router
 from app.api.v1.user_router import router as user_router
 
@@ -218,6 +218,8 @@ def create_app() -> FastAPI:
     app.include_router(rag_router)
     app.include_router(forecast_router)
     app.include_router(stocks_router)
+
+    app.include_router(macro_router)
     @app.get("/")
     async def root():
         return {
