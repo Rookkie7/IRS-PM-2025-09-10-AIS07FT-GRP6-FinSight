@@ -9,15 +9,15 @@ from app.services.stock_recommender import MultiObjectiveRecommender
 from app.services.stock_service import StockService
 from app.services.user_service import UserService
 
-from config import settings
-from adapters.db.news_repo import NewsRepo
-from adapters.vector.mongo_vector_index import MongoVectorIndex
-from adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
-from services.news_service import NewsService
-from services.rec_service import RecService
-from services.rag_service import RagService
-from services.forecast_service import ForecastService, ForecastConfig
-from adapters.db.database_client import get_mongo_db, get_postgres_session
+from app.config import settings
+from app.adapters.db.news_repo import NewsRepo
+from app.adapters.vector.mongo_vector_index import MongoVectorIndex
+from app.adapters.embeddings.sentence_transformers_embed import LocalEmbeddingProvider
+from app.services.news_service import NewsService
+from app.services.rec_service import RecService
+from app.services.rag_service import RagService
+from app.services.forecast_service import ForecastService, ForecastConfig
+from app.adapters.db.database_client import get_mongo_db, get_postgres_session
 
 
 def get_user_repo() -> UserRepo:

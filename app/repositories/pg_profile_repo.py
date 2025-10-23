@@ -368,31 +368,48 @@ class PgProfileRepo:
         if len(v) > 20: v = v[:20]
         return v
 
+    # def _write_prof20(self, cur, user_id: str, vec20: list[float]):
+    #     """兼容两种列类型写回：优先尝试直接写数组，失败再写 JSON/text。"""
+    #     vec20 = [float(_clip01(x)) for x in (vec20 or [])]
+    #     if len(vec20) < 20: vec20 += [0.0]*(20-len(vec20))
+    #     if len(vec20) > 20: vec20 = vec20[:20]
+
+    #     up_sql_arr = """
+    #     UPDATE user_profiles
+    #     SET profile_vector_20d = %s,
+    #         updated_at = now()
+    #     WHERE user_id = %s
+    #     """
+    #     try:
+    #         cur.execute(up_sql_arr, (vec20, user_id))  # 如果列是 real[]，这一步就成功
+    #         return
+    #     except Exception as e:
+    #         log.debug(f"[prof20] array-write failed, fallback to json text: {e.__class__.__name__}: {e}")
+
+    #     up_sql_json = """
+    #     UPDATE user_profiles
+    #     SET profile_vector_20d = %s,
+    #         updated_at = now()
+    #     WHERE user_id = %s
+    #     """
+    #     cur.execute(up_sql_json, (json.dumps(vec20), user_id))  # 列是 text/json 时走这里
+
     def _write_prof20(self, cur, user_id: str, vec20: list[float]):
-        """兼容两种列类型写回：优先尝试直接写数组，失败再写 JSON/text。"""
+        """强制写入 JSON 字符串格式，确保 TEXT 列永远存储为 '[]' 而非 '{}'。"""
         vec20 = [float(_clip01(x)) for x in (vec20 or [])]
-        if len(vec20) < 20: vec20 += [0.0]*(20-len(vec20))
-        if len(vec20) > 20: vec20 = vec20[:20]
+        if len(vec20) < 20:
+            vec20 += [0.0] * (20 - len(vec20))
+        if len(vec20) > 20:
+            vec20 = vec20[:20]
 
-        up_sql_arr = """
+        json_str = json.dumps(vec20)  # ✅ 永远序列化为 JSON 数组字符串 "[]"
+        up_sql = """
         UPDATE user_profiles
         SET profile_vector_20d = %s,
             updated_at = now()
         WHERE user_id = %s
         """
-        try:
-            cur.execute(up_sql_arr, (vec20, user_id))  # 如果列是 real[]，这一步就成功
-            return
-        except Exception as e:
-            log.debug(f"[prof20] array-write failed, fallback to json text: {e.__class__.__name__}: {e}")
-
-        up_sql_json = """
-        UPDATE user_profiles
-        SET profile_vector_20d = %s,
-            updated_at = now()
-        WHERE user_id = %s
-        """
-        cur.execute(up_sql_json, (json.dumps(vec20), user_id))  # 列是 text/json 时走这里
+        cur.execute(up_sql, (json_str, user_id))
 
     def update_prof20_add(
         self,
