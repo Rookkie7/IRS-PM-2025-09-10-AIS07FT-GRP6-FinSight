@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { TrendingUp, TrendingDown, Calendar, Target, AlertCircle, BarChart } from "lucide-react";
-import { fetchForecastBatch, fetchLast7Prices } from "../../api/forecast";
+import { fetchForecastBatch } from "../../api/forecast";
 import { toPredictionData, type PredictionData } from "../../utils/forecastMapper";
 import {
   ResponsiveContainer,
@@ -23,6 +23,22 @@ function relativeFromNow(iso: string) {
   if (min < 60) return `${min} minutes ago`;
   const hr = Math.floor(min / 60);
   return `${hr} hours ago`;
+}
+
+// 最近7天收盘价
+const API = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
+async function fetchLast7Prices(symbol: string) {
+  const res = await fetch(`${API}/forecast/prices7?ticker=${encodeURIComponent(symbol)}`);
+  if (!res.ok) throw new Error("Failed to load last 7 prices");
+  return res.json(); // { prices: Array<{ date: string; close: number }> }
+}
+
+// 未来7天预测 —— 如果你的后端只支持 horizons=7，就把 URL 改成 ?horizons=7
+async function fetchForecast7(symbol: string) {
+  const res = await fetch(`${API}/forecast/${encodeURIComponent(symbol)}?horizon_days=7`);
+  if (!res.ok) throw new Error("Failed to load 7-day forecast");
+  return res.json(); // 兼容 ForecastResult { points?: [{date,value,type}] }
 }
 
 // cache
@@ -52,8 +68,6 @@ function persistCacheToSession() {
     sessionStorage.setItem(PERSIST_KEY, JSON.stringify(obj));
   } catch {}
 }
-
-
 
 // === helpers for chart ===
 function fmt(d: Date) {
@@ -134,7 +148,6 @@ function buildTrendSeries(
   }));
 }
 
-
 const METHOD_OPTIONS = [
   "lstm",
   "arima",
@@ -156,106 +169,129 @@ export const PredictTab: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-
   const [method, setMethod] = useState<string>("lstm");
   const [limit, setLimit] = useState<number>(10);
   const [hist7Map, setHist7Map] = useState<Record<string, {date: string; close: number}[]>>({});
 
+  type HistoryPoint = { date: string; close: number };
+  type ChartPoint = { date: string; price?: number; pred?: number };
+  const [chartErr, setChartErr] = useState<string | null>(null);
+  const [history7, setHistory7] = useState<HistoryPoint[]>([]);
+  const [forecastRes, setForecastRes] = useState<any | null>(null);
+
+  // ✅ 修正：原来这一行是冗余的三元表达式，直接用 selectedSymbol 兜底即可
+  const symbol = selectedSymbol || "AAPL";
 
   // const HORIZONS = [7, 30, 90, 180]; // ← 只要 7/30/90/180
   const HORIZONS = [1,2,3,4,5,6,7, 30]; // ← 只要 7/30/90/180
-  // const cacheKey = useMemo(() => makeKey(method, limit, HORIZONS), [method, limit]);
   const cacheKey = useMemo(
-  () => `${method}|${limit}|${HORIZONS.join(",")}|${symbols.join(",")}`,
-  [method, limit]
-);
+    () => `${method}|${limit}|${HORIZONS.join(",")}|${symbols.join(",")}`,
+    [method, limit]
+  );
 
   const [refreshNonce, setRefreshNonce] = useState(0);
-
 
   const companyName = useMemo(() => {
     const idx = symbols.indexOf(selectedSymbol);
     return companyNames[idx] ?? selectedSymbol;
   }, [selectedSymbol]);
 
-
   useEffect(() => {
-  let alive = true;
-  (async () => {
-    setLoading(true);
-    setErr(null);
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      setErr(null);
 
-    // 1) 命中缓存（TTL 内）
-    const cached = batchCache.get(cacheKey);
-    const now = Date.now();
-    if (cached && now - cached.at < CACHE_TTL_MS) {
-      if (!alive) return;
-      setList(cached.data);
-      // 校正选中项
-      const match = cached.data.find((x) => x.symbol === selectedSymbol) ?? cached.data[0] ?? null;
-      setSelectedStock(match ?? null);
-      if (match) {
-        const periods = match.predictions.map((p) => p.period);
-        if (!periods.includes(selectedPeriod)) {
-          const day = match.predictions.find(p => /1\s*day/i.test(p.period))?.period
-              ?? match.predictions[0]?.period
-              ?? "1 Day";
+      // 1) 命中缓存（TTL 内）
+      const cached = batchCache.get(cacheKey);
+      const now = Date.now();
+      if (cached && now - cached.at < CACHE_TTL_MS) {
+        if (!alive) return;
+        setList(cached.data);
+        // 校正选中项
+        const match = cached.data.find((x) => x.symbol === selectedSymbol) ?? cached.data[0] ?? null;
+        setSelectedStock(match ?? null);
+        if (match) {
+          const periods = match.predictions.map((p) => p.period);
+          if (!periods.includes(selectedPeriod)) {
+            const day = match.predictions.find(p => /1\\s*day/i.test(p.period))?.period
+                ?? match.predictions[0]?.period
+                ?? "1 Day";
+            setSelectedPeriod(day);
+          }
+        }
+        setLoading(false);
+        return;
+      }
+
+      // 2) 并发去重：复用在途请求
+      let p = inFlight.get(cacheKey);
+      if (!p) {
+        p = (async () => {
+          const lim = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 10;
+          const raw = await fetchForecastBatch({ method, horizons: HORIZONS, limit: lim });
+          const items: PredictionData[] = raw.map((r: any) => {
+            const mapped = toPredictionData(r);
+            return {
+              ...mapped,
+              method: r.method ?? method,
+              lastUpdated: relativeFromNow(mapped.lastUpdated),
+            } as PredictionData;
+          });
+          // 写缓存
+          batchCache.set(cacheKey, { at: Date.now(), data: items });
+          // （可选）持久化
+          persistCacheToSession();
+          return items;
+        })();
+        inFlight.set(cacheKey, p);
+      }
+
+      try {
+        const items = await p;
+        if (!alive) return;
+        setList(items);
+
+        const match = items.find((x) => x.symbol === selectedSymbol) ?? items[0] ?? null;
+        setSelectedStock(match ?? null);
+
+        if (match) {
+          const day = match.predictions.find(p => /1\\s*day/i.test(p.period))?.period
+                    ?? match.predictions[0]?.period
+                    ?? "1 Day";
           setSelectedPeriod(day);
         }
+      } catch (e: any) {
+        if (alive) setErr(e.message || "Load failed");
+      } finally {
+        inFlight.delete(cacheKey);
+        if (alive) setLoading(false);
       }
-      setLoading(false);
-      return;
-    }
+    })();
+    return () => {
+      alive = false;
+    };
+  // 关键依赖：method/limit 改变；手动刷新时 refreshNonce 变化绕过缓存
+  }, [method, limit, refreshNonce]);
 
-    // 2) 并发去重：复用在途请求
-    let p = inFlight.get(cacheKey);
-    if (!p) {
-      p = (async () => {
-        const lim = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 10;
-        const raw = await fetchForecastBatch({ method, horizons: HORIZONS, limit: lim });
-        const items: PredictionData[] = raw.map((r: any) => {
-          const mapped = toPredictionData(r);
-          return {
-            ...mapped,
-            method: r.method ?? method,
-            lastUpdated: relativeFromNow(mapped.lastUpdated),
-          } as PredictionData;
-        });
-        // 写缓存
-        batchCache.set(cacheKey, { at: Date.now(), data: items });
-        // （可选）持久化
-        persistCacheToSession();
-        return items;
-      })();
-      inFlight.set(cacheKey, p);
-    }
-
-    try {
-      const items = await p;
-      if (!alive) return;
-      setList(items);
-
-      const match = items.find((x) => x.symbol === selectedSymbol) ?? items[0] ?? null;
-      setSelectedStock(match ?? null);
-
-      if (match) {
-        const day = match.predictions.find(p => /1\s*day/i.test(p.period))?.period
-                  ?? match.predictions[0]?.period
-                  ?? "1 Day";
-        setSelectedPeriod(day);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setChartErr(null);
+        const [h, f] = await Promise.all([fetchLast7Prices(symbol), fetchForecast7(symbol)]);
+        if (!alive) return;
+        setHistory7(Array.isArray(h?.prices) ? h.prices : []);
+        setForecastRes(f);
+      } catch (e: any) {
+        if (!alive) return;
+        setChartErr(e?.message ?? "Load error");
       }
-    } catch (e: any) {
-      if (alive) setErr(e.message || "Load failed");
-    } finally {
-      inFlight.delete(cacheKey);
-      if (alive) setLoading(false);
-    }
-  })();
-  return () => {
-    alive = false;
-  };
-// 关键依赖：method/limit 改变；手动刷新时 refreshNonce 变化绕过缓存
-}, [method, limit, refreshNonce]);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [symbol]);
 
   const currentPrediction =
     selectedStock?.predictions.find((p) => p.period === selectedPeriod) ||
@@ -266,21 +302,21 @@ export const PredictTab: React.FC = () => {
       change: 0,
       changePercent: 0,
     };
-    useEffect(() => {
-      let alive = true;
-      (async () => {
-        if (!selectedSymbol) return;
-        try {
-          const prices = await fetchLast7Prices(selectedSymbol);
-          if (!alive) return;
-          setHist7Map((m) => ({ ...m, [selectedSymbol]: prices }));
-        } catch (e) {
-          // 静默失败即可，图表会用 fallback
-          // console.warn("fetchLast7Prices failed", e);
-        }
-      })();
-      return () => { alive = false; };
-    }, [selectedSymbol]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!selectedSymbol) return;
+      try {
+        const prices = await fetchLast7Prices(selectedSymbol);
+        if (!alive) return;
+        setHist7Map((m) => ({ ...m, [selectedSymbol]: prices }));
+      } catch (e) {
+        // 静默失败即可，图表会用 fallback
+      }
+    })();
+    return () => { alive = false; };
+  }, [selectedSymbol]);
 
   const getRiskColor = (risk: string) => {
     switch (risk) {
@@ -295,12 +331,37 @@ export const PredictTab: React.FC = () => {
     }
   };
 
+  // 拼折线图数据：历史线 + 预测线
+  const chartData = useMemo<ChartPoint[]>(() => {
+    const hist: ChartPoint[] = Array.isArray(history7)
+      ? history7.map((h) => ({ date: h.date, price: h.close }))
+      : [];
+
+    const preds: ChartPoint[] = Array.isArray(forecastRes?.points)
+      ? (forecastRes.points as any[])
+          .filter((p) => p?.type === "pred" && typeof p?.value === "number" && isFinite(p.value))
+          .map((p) => ({ date: p.date, pred: p.value }))
+      : [];
+
+    const map = new Map<string, ChartPoint>();
+    for (const p of hist) map.set(p.date, { ...map.get(p.date), ...p });
+    for (const p of preds) map.set(p.date, { ...map.get(p.date), ...p });
+
+    return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+  }, [history7, forecastRes]);
+
   const trendData = useMemo(() => {
     const sym = selectedStock?.symbol || selectedSymbol;  // ← 兜底用 selectedSymbol
     const ext = sym ? hist7Map[sym] : undefined;
     return buildTrendSeries(selectedStock, ext);
   }, [selectedStock, selectedSymbol, hist7Map]);
 
+  // ✅ 新增：X 轴与 Tooltip 的日期格式化（MM-DD）
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return `${(d.getMonth() + 1).toString().padStart(2, "0")}-${d.getDate().toString().padStart(2, "0")}`;
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -361,7 +422,7 @@ export const PredictTab: React.FC = () => {
               className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-            {/* ✅ 新增：刷新按钮 */}
+          {/* ✅ 新增：刷新按钮 */}
           <button
             onClick={() => {
               batchCache.delete(cacheKey); // 清除当前请求的缓存
@@ -483,44 +544,44 @@ export const PredictTab: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-900 mb-3">Confidence Level</h4>
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-1 bg-gray-200 rounded-full h-3">
-                      <div
-                        className="bg-blue-600 h-3 rounded-full transition-all duration-500"
-                        style={{ width: `${currentPrediction.confidence * 100}%` }}
-                      />
-                    </div>
-                    <span className="text-lg font-bold text-gray-900">{Math.round(currentPrediction.confidence * 100)}%</span>
+                {/* === Forecast Line Chart（历史7天 + 未来7天）=== */}
+                <div className="rounded-2xl border p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Calendar className="w-4 h-4" />
+                    <span className="font-medium">Last 7 days & Next 7 days</span>
                   </div>
-                  <p className="text-xs text-gray-600 mt-2">Based on historical patterns, market sentiment, and technical indicators</p>
-                </div>
-                {/* Trend Chart */}
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                  <h4 className="font-semibold text-gray-900 mb-4">Trend (Past 7d → Next 7d)</h4>
-                  <div className="h-72">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={trendData} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
+                  <div style={{ width: "100%", height: 320 }}>
+                    <ResponsiveContainer>
+                      <LineChart data={chartData} margin={{ left: 8, right: 16, top: 8, bottom: 8 }}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                        <YAxis tick={{ fontSize: 12 }} domain={["dataMin", "dataMax"]} />
-                        <Tooltip formatter={(v: any) => [`$${Number(v).toFixed(2)}`, "Price"]} labelClassName="text-sm" />
-                        <Line type="monotone" dataKey="price" strokeWidth={2} dot={false} />
-                        <ReferenceLine
-                          x={fmt(new Date())}
-                          stroke="#9ca3af"
-                          strokeDasharray="4 4"
-                          label={{ value: "Today", position: "top", fill: "#6b7280" }}
-                        />
+                        {/* ✅ 横坐标日期改为 月-日 */}
+                        <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontSize: 12 }} />
+                        <YAxis tick={{ fontSize: 12 }} domain={["auto", "auto"]} />
+                        {/* ✅ Tooltip 里也同步显示 月-日 */}
+                        <Tooltip labelFormatter={(label) => `Date: ${formatDate(label as string)}`} />
+                        {/* 历史线 */}
+                        <Line type="monotone" dataKey="price" strokeWidth={2} dot={false} isAnimationActive={false} />
+                        {/* 预测线 */}
+                        <Line type="monotone" dataKey="pred" strokeWidth={2} dot isAnimationActive={false} />
+                        {/* 参考线：最后一个历史点 */}
+                        {history7?.length ? (
+                          <ReferenceLine
+                            x={history7[history7.length - 1].date}
+                            strokeDasharray="3 3"
+                            label={{ value: "Today", position: "top" }}
+                          />
+                        ) : null}
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Tip: If your backend returns <code>history7</code> and <code>forecastPath7</code>, the chart will use them. Otherwise it falls back to a flat
-                    history and a linear path to the 1-week prediction.
-                  </p>
+
+                  {chartErr && (
+                    <div className="mt-2 text-xs text-red-600">
+                      {chartErr}
+                    </div>
+                  )}
                 </div>
+
               </div>
 
               <div className="space-y-4">
@@ -552,8 +613,6 @@ export const PredictTab: React.FC = () => {
               </div>
             </div>
           </div>
-
-
         </>
       )}
     </div>
