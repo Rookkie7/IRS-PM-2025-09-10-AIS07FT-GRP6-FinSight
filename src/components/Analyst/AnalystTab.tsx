@@ -8,7 +8,7 @@ interface ChatMessage {
   timestamp: string;
   attachments?: {
     type: 'chart' | 'table' | 'recommendation';
-    data: any;
+    data: never;
   }[];
 }
 

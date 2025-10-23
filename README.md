@@ -6,7 +6,7 @@
 pnpm i
 
 # 2) set backend endpoint (optional; default already localhost):
-echo 'VITE_API_BASE="http://localhost:8000/api/v1"' > .env.local
+echo 'VITE_BACKEND_BASE_URL=http://127.0.0.1:8000"' > .env
 
 # 3) run
 pnpm dev
