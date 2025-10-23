@@ -24,6 +24,7 @@ export function LoginPage({ onSwitchToRegister }: LoginPageProps) {
 
         try {
             const base = import.meta.env.VITE_BACKEND_BASE_URL as string | undefined;
+            console.log(base)
             if (!base) throw new Error('VITE_BACKEND_BASE_URL is not set in .env(.local)');
 
             // 1) 登录：拿 access_token
