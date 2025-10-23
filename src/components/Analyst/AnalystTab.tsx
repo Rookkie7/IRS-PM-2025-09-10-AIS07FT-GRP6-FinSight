@@ -3,6 +3,19 @@ import { Send, Bot, User, TrendingUp, DollarSign, BarChart3, RefreshCw, Sparkles
 
 type Role = 'user' | 'ai';
 
+type MacroQuote = {
+    symbol: string;
+    price: number | null;
+    change_pct: number | null;
+    ts?: string | null;
+    error?: string;
+};
+
+type SentimentResp = {
+    label: 'Bullish' | 'Neutral' | 'Bearish' | string;
+    inputs?: { spx_change_pct?: number; vix?: number };
+};
+
 interface ChatMessage {
     id: string;
     type: Role;
@@ -42,6 +55,11 @@ export const AnalystTab: React.FC = () => {
     const [selectedModel, setSelectedModel] = useState<string | null>(null);
     const [selectedDatasetIds, setSelectedDatasetIds] = useState<string[]>([]);
 
+    const [spx, setSpx] = useState<MacroQuote | null>(null);
+    const [vix, setVix] = useState<MacroQuote | null>(null);
+    const [sentiment, setSentiment] = useState<SentimentResp | null>(null);
+    const [macroErr, setMacroErr] = useState<string | null>(null);
+
     useEffect(() => {
         (async () => {
             try {
@@ -75,6 +93,34 @@ export const AnalystTab: React.FC = () => {
     useEffect(() => {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }, [messages, isTyping]);
+
+    useEffect(() => {
+        let alive = true;
+        const fetchAll = async () => {
+            try {
+                const [a, b, c] = await Promise.all([
+                    fetch(`${API_BASE}/macro/spx`).then(r => r.json()),
+                    fetch(`${API_BASE}/macro/vix`).then(r => r.json()),
+                    fetch(`${API_BASE}/macro/sentiment`).then(r => r.json()),
+                ]);
+                if (!alive) return;
+                setSpx(a);
+                setVix(b);
+                setSentiment(c);
+                setMacroErr(null);
+            } catch (e: any) {
+                if (!alive) return;
+                setMacroErr(e?.message || 'failed to load macro data');
+            }
+        };
+
+        fetchAll();
+        const id = setInterval(fetchAll, 30_000); // 30s 轮询，可调
+        return () => {
+            alive = false;
+            clearInterval(id);
+        };
+    }, []);
 
     const nowStr = () =>
         new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -201,27 +247,35 @@ export const AnalystTab: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Quick Stats */}
+                {/* Quick Stats (live) */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <QuickStat
                         icon={<TrendingUp className="h-5 w-5" />}
                         title="Market Sentiment"
-                        value="Bullish"
-                        sub="Multi-source data"
-                        gradient="from-emerald-500 to-teal-500"
+                        value={sentiment?.label ?? '—'}
+                        sub={
+                            sentiment?.inputs
+                                ? `S&P ${fmtPct(sentiment.inputs.spx_change_pct)} · VIX ${fmtPrice(sentiment.inputs.vix, 1)}`
+                                : (macroErr ? `Error: ${macroErr}` : 'Multi-source data')
+                        }
+                        gradient={sentimentGradient(sentiment?.label)}
                     />
                     <QuickStat
                         icon={<DollarSign className="h-5 w-5" />}
                         title="S&P 500"
-                        value="—"
-                        sub="Live via backend"
+                        value={fmtPrice(spx?.price, 2)}
+                        sub={spx?.change_pct !== undefined && spx?.change_pct !== null
+                            ? `Change ${fmtPct(spx?.change_pct)}`
+                            : (macroErr ? `Error: ${macroErr}` : 'Live via backend')}
                         gradient="from-blue-500 to-cyan-500"
                     />
                     <QuickStat
                         icon={<BarChart3 className="h-5 w-5" />}
                         title="VIX Index"
-                        value="—"
-                        sub="Volatility measure"
+                        value={fmtPrice(vix?.price, 2)}
+                        sub={vix?.change_pct !== undefined && vix?.change_pct !== null
+                            ? `Change ${fmtPct(vix?.change_pct)}`
+                            : (macroErr ? `Error: ${macroErr}` : 'Volatility measure')}
                         gradient="from-orange-500 to-red-500"
                     />
                 </div>
@@ -452,5 +506,25 @@ async function safeDetail(res: Response): Promise<string | null> {
         return j?.detail || j?.message || null;
     } catch {
         return null;
+    }
+}
+
+function fmtPrice(n?: number | null, digits = 2) {
+    if (n === null || n === undefined || Number.isNaN(n)) return '—';
+    return n.toFixed(digits);
+}
+function fmtPct(n?: number | null, digits = 2) {
+    if (n === null || n === undefined || Number.isNaN(n)) return '—';
+    const sign = n > 0 ? '+' : '';
+    return `${sign}${n.toFixed(digits)}%`;
+}
+function sentimentGradient(label?: string) {
+    switch (label) {
+        case 'Bullish':
+            return 'from-emerald-500 to-teal-500';
+        case 'Bearish':
+            return 'from-rose-500 to-red-500';
+        default:
+            return 'from-slate-400 to-slate-500';
     }
 }
