@@ -12,6 +12,8 @@ import {
   Tooltip,
   ReferenceLine,
 } from "recharts";
+import { RefreshCcw, Loader2, BadgeInfo } from "lucide-react"; 
+
 
 const symbols = ["AAPL", "TSLA", "NVDA"];
 const companyNames = ["Apple Inc.", "Tesla Inc.", "NVIDIA Corp.", "Microsoft Corp."];
@@ -333,28 +335,89 @@ export const PredictTab: React.FC = () => {
 
   // 拼折线图数据：历史线 + 预测线
   const chartData = useMemo<ChartPoint[]>(() => {
+    // 历史 7 天
     const hist: ChartPoint[] = Array.isArray(history7)
       ? history7.map((h) => ({ date: h.date, price: h.close }))
       : [];
 
-    const preds: ChartPoint[] = Array.isArray(forecastRes?.points)
-      ? (forecastRes.points as any[])
-          .filter((p) => p?.type === "pred" && typeof p?.value === "number" && isFinite(p.value))
-          .map((p) => ({ date: p.date, pred: p.value }))
-      : [];
+    // “今天”的当前价（来自 selectedStock.currentPrice），只要有历史最后一天，就插入今天
+    const todayISO = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+    const todayPoint: ChartPoint | null =
+      selectedStock?.currentPrice != null && Number.isFinite(selectedStock.currentPrice)
+        ? { date: todayISO, price: selectedStock.currentPrice }
+        : null;
 
+    // 预测（未来 7 天），兼容多种后端字段
+    const norm = normalizeForecast(forecastRes);
+    // 只取“今天之后”的 7 个点（如果后端已给了今天，则也能合并进去）
+    const preds: ChartPoint[] = norm
+      .map((p) => ({ date: (p.date ?? "").slice(0, 10), pred: p.value }))
+      .filter((p) => p.date) // 过滤空日期
+      .slice(0, 7);
+
+    // 合并：历史7天 + 今天 + 未来7天
     const map = new Map<string, ChartPoint>();
-    for (const p of hist) map.set(p.date, { ...map.get(p.date), ...p });
-    for (const p of preds) map.set(p.date, { ...map.get(p.date), ...p });
+    for (const p of hist) map.set(p.date, { ...(map.get(p.date) || {}), ...p });
+    if (todayPoint) {
+      const existing = map.get(todayPoint.date) || {};
+      map.set(todayPoint.date, { ...existing, ...todayPoint });
+    }
+    for (const p of preds) {
+      const existing = map.get(p.date) || {};
+      map.set(p.date, { ...existing, ...p });
+    }
 
-    return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [history7, forecastRes]);
+    // 排序（按 ISO 日期）
+    return Array.from(map.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  }, [history7, forecastRes, selectedStock?.currentPrice]);
+
 
   const trendData = useMemo(() => {
     const sym = selectedStock?.symbol || selectedSymbol;  // ← 兜底用 selectedSymbol
     const ext = sym ? hist7Map[sym] : undefined;
     return buildTrendSeries(selectedStock, ext);
   }, [selectedStock, selectedSymbol, hist7Map]);
+  // 统一兼容后端各种返回结构：points / forecast / forecast_points / result / direct array
+  function normalizeForecast(raw: any): Array<{ date: string; value: number }> {
+    if (!raw) return [];
+
+    // 常见结构 1：{ points: [{date, value, type}] }
+    if (Array.isArray(raw.points)) {
+      return raw.points
+        .filter((p: any) => (p?.type ? String(p.type).toLowerCase() === "pred" : true))
+        .map((p: any) => ({ date: p.date ?? p.ts ?? p.t, value: p.value ?? p.price ?? p.v }))
+        .filter((p: any) => p.date && Number.isFinite(p.value));
+    }
+
+    // 常见结构 2：{ forecast: [{date, price}] }
+    if (Array.isArray(raw.forecast)) {
+      return raw.forecast
+        .map((p: any) => ({ date: p.date ?? p.ts ?? p.t, value: p.value ?? p.price ?? p.v }))
+        .filter((p: any) => p.date && Number.isFinite(p.value));
+    }
+
+    // 常见结构 3：{ forecast_points: [...] } / { result: [...] }
+    if (Array.isArray(raw.forecast_points)) {
+      return raw.forecast_points
+        .map((p: any) => ({ date: p.date ?? p.ts ?? p.t, value: p.value ?? p.price ?? p.v }))
+        .filter((p: any) => p.date && Number.isFinite(p.value));
+    }
+    if (Array.isArray(raw.result)) {
+      return raw.result
+        .map((p: any) => ({ date: p.date ?? p.ts ?? p.t, value: p.value ?? p.price ?? p.v }))
+        .filter((p: any) => p.date && Number.isFinite(p.value));
+    }
+
+    // 常见结构 4：直接数组
+    if (Array.isArray(raw)) {
+      return raw
+        .map((p: any) => ({ date: p.date ?? p.ts ?? p.t, value: p.value ?? p.price ?? p.v }))
+        .filter((p: any) => p.date && Number.isFinite(p.value));
+    }
+
+    return [];
+  }
+
 
   // ✅ 新增：X 轴与 Tooltip 的日期格式化（MM-DD）
   const formatDate = (dateStr: string) => {
@@ -423,16 +486,32 @@ export const PredictTab: React.FC = () => {
             />
           </div>
           {/* ✅ 新增：刷新按钮 */}
-          <button
-            onClick={() => {
-              batchCache.delete(cacheKey); // 清除当前请求的缓存
-              setRefreshNonce((n) => n + 1); // 触发刷新
-            }}
-            className="px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 hover:bg-gray-100 text-sm text-gray-700"
-            title="Refresh cached results"
-          >
-            🔄 Refresh
-          </button>
+        <button
+          onClick={() => {
+            batchCache.delete(cacheKey);
+            setRefreshNonce((n) => n + 1);
+          }}
+          disabled={loading}
+          className={`
+            inline-flex items-center gap-2 px-3 py-2 rounded-2xl text-sm font-medium
+            border border-gray-200 bg-white shadow hover:shadow-md transition
+            hover:bg-gray-50 active:scale-[0.99]
+            ${loading ? "opacity-60 cursor-not-allowed" : ""}
+          `}
+          title="Refresh cached results"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Refreshing...
+            </>
+          ) : (
+            <>
+              <RefreshCcw className="w-4 h-4" />
+              Refresh
+            </>
+          )}
+        </button>
         </div>
       </div>
 
