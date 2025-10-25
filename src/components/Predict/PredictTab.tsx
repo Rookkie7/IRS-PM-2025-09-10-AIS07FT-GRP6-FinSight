@@ -172,8 +172,6 @@ function normalizeForecast(raw: any): Array<{ date: string; value: number }> {
 
 // ====== 类型（统一声明一次）======
 type HistoryPoint = { date: string; close: number };
-type DayBar = { date: string; close: number };
-type ChartRow = { date: string; value?: number; isFuture?: boolean };
 
 // ====== 批量结果 → PredictionData 适配器 ======
 function adaptRowToPredictionData(r: any, fallbackMethod: string): PredictionData {
@@ -270,6 +268,47 @@ function adaptRowToPredictionData(r: any, fallbackMethod: string): PredictionDat
     predictions,
   } as PredictionData;
 }
+/* --------------------- 本地诊断算法（轻量） --------------------- */
+type RiskLevel = "Low" | "Medium" | "High";
+type DayBar = { date: string; close: number };
+type ChartRow = { date: string; value?: number; isFuture?: boolean };
+
+function directionalAccuracy(closes: number[], window = 90): number {
+  if (closes.length < 3) return 0.7;                 // 样本太少给默认
+  const diffs = [];
+  for (let i = 1; i < closes.length; i++) diffs.push(closes[i] - closes[i-1]);
+  const recent = diffs.slice(-Math.max(10, Math.min(window, diffs.length)));
+  if (recent.length < 2) return 0.7;
+  let hits = 0;
+  for (let i = 1; i < recent.length; i++) {
+    if ((recent[i-1] >= 0) === (recent[i] >= 0)) hits++;
+  }
+  return Math.round((hits / (recent.length - 1)) * 10000) / 10000;
+}
+function stdPopulation(xs: number[]): number {
+  if (xs.length <= 1) return 0;
+  const mu = xs.reduce((a,b)=>a+b,0)/xs.length;
+  const varp = xs.reduce((s,x)=>s+(x-mu)*(x-mu),0)/xs.length;
+  return Math.sqrt(varp);
+}
+function riskLevelByVol(closes: number[]): RiskLevel {
+  if (closes.length < 20) return "Medium";
+  const rets: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const prev = closes[i-1];
+    if (prev !== 0) rets.push(closes[i]/prev - 1);
+  }
+  const vol = stdPopulation(rets);
+  if (vol < 0.012) return "Low";
+  if (vol < 0.025) return "Medium";
+  return "High";
+}
+function bestTimeframeFromPredictions(preds: PredictionData["predictions"]): string {
+  if (!preds?.length) return "1 Day";
+  const best = [...preds].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+  return best?.period || "1 Day";
+}
+
 
 // ====== 组件 ======
 const METHOD_OPTIONS: { value: string; label: string }[] = [
@@ -294,7 +333,7 @@ export const PredictTab: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const [method, setMethod] = useState<string>("lstm");
+  const [method, setMethod] = useState<string>("transformer");
   const [limit, setLimit] = useState<number>(10);
   const [hist7Map, setHist7Map] = useState<Record<string, HistoryPoint[]>>({});
 
@@ -319,6 +358,26 @@ export const PredictTab: React.FC = () => {
     const idx = symbols.indexOf(selectedSymbol);
     return companyNames[idx] ?? selectedSymbol;
   }, [selectedSymbol, symbols]);
+
+  const derivedDiag = useMemo(() => {
+    const closes = (history7 || []).map((d) => Number(d.close)).filter((x) => Number.isFinite(x));
+    const accuracy = directionalAccuracy(closes, 90);
+    const risk_level = riskLevelByVol(closes);
+    const best_timeframe = bestTimeframeFromPredictions(selectedStock?.predictions || []);
+    const data_points =
+      Number(forecastRes?.meta?.n_obs) ||
+      Number(forecastRes?.n_obs) ||
+      closes.length;
+    return {
+      accuracy,
+      risk_level,
+      best_timeframe,
+      data_points,
+      generated_at: new Date().toISOString(),
+    };
+  }, [history7, selectedStock?.predictions, forecastRes?.meta?.n_obs, forecastRes?.n_obs]);
+
+  
 // 任一关键UI状态变化 -> 持久化
 useEffect(() => {
   const state: UIState = { symbol: selectedSymbol, method, limit };
@@ -525,7 +584,7 @@ const hist: DayBar[] = (Array.isArray(h?.prices) ? h.prices : [])
 useEffect(() => {
   const ui = ssRead<UIState>(UI_STATE_KEY);
   if (ui) {
-    setMethod(ui.method || "lstm");
+    setMethod(ui.method || "transformer");
     setLimit(Number.isFinite(ui.limit) ? ui.limit : 10);
     // selectedSymbol 会在批量加载后做最终校验/恢复
     if (ui.symbol) setSelectedSymbol(ui.symbol);
@@ -533,6 +592,36 @@ useEffect(() => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
 
+// ✅ 直接可用的数据
+const currentPriceSafe = Number.isFinite(selectedStock?.currentPrice)
+  ? Number(selectedStock!.currentPrice) : NaN;
+
+const chosenPred =
+  selectedStock?.predictions.find((p) => p.period === selectedPeriod) ||
+  selectedStock?.predictions[0] ||
+  null;
+
+const chosenPredPrice = Number.isFinite(chosenPred?.predictedPrice as any)
+  ? Number(chosenPred!.predictedPrice)
+  : NaN;
+
+const chosenPredConfPct = Math.round((chosenPred?.confidence ?? 0) * 100);
+
+// 数据点：优先后端 meta → 其次 n_obs → 再退化到已有历史条数
+const dataPointsDirect = Number(
+  (forecastRes?.meta?.n_obs ?? forecastRes?.n_obs ?? history7?.length ?? 0)
+);
+
+// 更新时间：优先 selectedStock.lastUpdated（你前面已转成 “xx minutes ago”）
+const updatedTextDirect = selectedStock?.lastUpdated
+  ? `Updated ${selectedStock.lastUpdated}`
+  : "—";
+
+// 右上角“最佳周期”直接显示当前选择的周期；如果想显示第一个也可：
+const bestTimeframeDirect = selectedPeriod || chosenPred?.period || "—";
+
+// 风险：直接用批量结果里的 risk（已经适配过）
+const riskDirect = (selectedStock?.risk as any) || "—";
 
 
 const accPct = Number.isFinite(diag?.accuracy as any)
@@ -587,39 +676,96 @@ const updatedText = diag?.generated_at
   };
 
   // ========== 图表数据（历史→今天→未来7天；统一 value 字段） ==========
-  const chartData = useMemo<ChartRow[]>(() => {
-    // 历史（已是最近7天，不含今天），转为 {date,value}
-    const histRows: ChartRow[] = Array.isArray(history7)
-      ? history7.map((h) => ({ date: String(h.date).slice(0, 10), value: Number(h.close), isFuture: false }))
-      : [];
+// ========== 图表数据（历史→今天→未来7天；统一用右侧 predictions） ==========
+const chartData = useMemo<ChartRow[]>(() => {
+  // 历史段
+  const histRows: ChartRow[] = Array.isArray(history7)
+    ? history7.map((h) => ({ date: String(h.date).slice(0, 10), value: Number(h.close), isFuture: false }))
+    : [];
 
-    // 今天
-    const todayISO = new Date().toISOString().slice(0, 10);
-    const lastHistValue = histRows.length > 0 ? Number(histRows[histRows.length - 1].value) : NaN;
-    const curPrice = Number.isFinite(selectedStock?.currentPrice)
-      ? Number(selectedStock!.currentPrice)
-      : lastHistValue;
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const lastHistValue = histRows.length > 0 ? Number(histRows[histRows.length - 1].value) : NaN;
 
-    // 归一化未来点
+  // 当前价：优先 selectedStock.currentPrice，退化到最近历史价
+  const curPrice = Number.isFinite(selectedStock?.currentPrice)
+    ? Number(selectedStock!.currentPrice)
+    : lastHistValue;
+
+  // —— 1) 用右侧 predictions 构造“锚点” —— //
+  const periodToDays = (s: string) => {
+    const t = String(s || "").trim().toLowerCase();
+    if (/^1\s*day$|^1d$/.test(t)) return 1;
+    if (/^2\s*days$|^2d$/.test(t)) return 2;
+    if (/^3\s*days$|^3d$/.test(t)) return 3;
+    if (/^4\s*days$|^4d$/.test(t)) return 4;
+    if (/^5\s*days$|^5d$/.test(t)) return 5;
+    if (/^6\s*days$|^6d$/.test(t)) return 6;
+    if (/^1\s*week$|^7d$|^7\s*days$/.test(t)) return 7;
+    if (/^1\s*month$|^30d$/.test(t)) return 30;
+    // 兜底：抽取数字
+    const n = parseInt(t.replace(/[^\d]/g, ""), 10);
+    return Number.isFinite(n) && n > 0 ? n : NaN;
+  };
+
+  const rightPreds = Array.isArray(selectedStock?.predictions) ? selectedStock!.predictions : [];
+  const anchorsFromRight = rightPreds
+    .map((p) => ({ days: periodToDays(p.period), value: Number(p.predictedPrice) }))
+    .filter((a) => Number.isFinite(a.days) && Number.isFinite(a.value))
+    .sort((a, b) => a.days - b.days);
+
+  // 目标日期 D+1 ~ D+7
+  const D = new Date(todayISO);
+  const futureDates: string[] = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(D);
+    d.setDate(d.getDate() + (i + 1));
+    return d.toISOString().slice(0, 10);
+  });
+
+  // S 曲线（平滑插值）
+  const easeCos = (t: number) => (1 - Math.cos(Math.PI * t)) / 2;
+
+  // —— 2) 生成未来逐日（优先用右侧锚点；没有则回退 forecastRes） —— //
+  let futureDaily: Array<{ date: string; value: number }> = [];
+
+  if (anchorsFromRight.length && Number.isFinite(curPrice)) {
+    // 以今天作为 day=0 的锚
+    const anchor0 = { days: 0, value: Number(curPrice) };
+    const anchors = [anchor0, ...anchorsFromRight]
+      .filter((x, idx, arr) => arr.findIndex((y) => y.days === x.days) === idx)
+      .sort((a, b) => a.days - b.days);
+
+    futureDaily = futureDates.map((dt, i) => {
+      const day = i + 1; // 1..7
+      // 找到右侧第一个 >= day 的锚点
+      const rIdx = anchors.findIndex((a) => a.days >= day);
+      if (rIdx === -1) {
+        // 超出最大锚：取最后一个锚点的值（保持平）
+        return { date: dt, value: anchors[anchors.length - 1].value };
+        }
+      if (rIdx === 0) {
+        // 还没到第一个锚：用第一个锚与 day=0 插值
+        const L = anchors[0]; // 其实就是 day=0
+        const R = anchors[1] || anchors[0];
+        const span = Math.max(1, R.days - L.days);
+        const t = (day - L.days) / span;
+        return { date: dt, value: Number(L.value + (R.value - L.value) * easeCos(t)) };
+      }
+      const L = anchors[rIdx - 1];
+      const R = anchors[rIdx];
+      if (R.days === L.days) return { date: dt, value: R.value };
+      const span = Math.max(1, R.days - L.days);
+      const t = (day - L.days) / span;
+      return { date: dt, value: Number(L.value + (R.value - L.value) * easeCos(t)) };
+    });
+
+  } else {
+    // 回退：用单票接口的 forecastRes（旧逻辑）
     const rawPreds = normalizeForecast(forecastRes)
       .map((p) => ({ date: String(p.date).slice(0, 10), value: Number(p.value) }))
       .filter((p) => p.date && Number.isFinite(p.value));
 
-    // 目标日期 D+1 ~ D+7
-    const D = new Date(todayISO);
-    const futureDates: string[] = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(D);
-      d.setDate(d.getDate() + (i + 1));
-      return d.toISOString().slice(0, 10);
-    });
-
-    // S 曲线
-    const easeCos = (t: number) => (1 - Math.cos(Math.PI * t)) / 2;
-
-    // 生成未来逐日
-    let futureDaily: Array<{ date: string; value: number }> = [];
-    if (rawPreds.length >= 2 && Number.isFinite(curPrice)) {
-      const anchors = [{ date: todayISO, value: curPrice as number }, ...rawPreds]
+    if (rawPreds.length && Number.isFinite(curPrice)) {
+      const anchors = [{ date: todayISO, value: Number(curPrice) }, ...rawPreds]
         .filter((x, i, arr) => arr.findIndex((y) => y.date === x.date) === i)
         .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -629,32 +775,23 @@ const updatedText = diag?.generated_at
         const L = anchors[rIdx - 1];
         const R = anchors[rIdx];
         if (L.date === R.date) return { date: dt, value: R.value };
-        const t = (new Date(dt).getTime() - new Date(L.date).getTime()) / (new Date(R.date).getTime() - new Date(L.date).getTime());
+        const t = (new Date(dt).getTime() - new Date(L.date).getTime()) /
+                  (new Date(R.date).getTime() - new Date(L.date).getTime());
         return { date: dt, value: Number(L.value + (R.value - L.value) * easeCos(t)) };
       });
-    } else {
-      const oneWeekTarget =
-        selectedStock?.predictions.find((p) => /1\s*week/i.test(p.period))?.predictedPrice ??
-        selectedStock?.predictions[0]?.predictedPrice ??
-        curPrice;
-      if (Number.isFinite(curPrice) && Number.isFinite(oneWeekTarget)) {
-        futureDaily = futureDates.map((dt, i) => {
-          const t = (i + 1) / 7;
-          return { date: dt, value: Number(curPrice + (Number(oneWeekTarget) - Number(curPrice)) * easeCos(t)) };
-        });
-      }
     }
+  }
 
-    // 合并
-    const map = new Map<string, ChartRow>();
-    for (const r of histRows) map.set(r.date, { ...r, isFuture: false });
-    if (Number.isFinite(curPrice)) map.set(todayISO, { date: todayISO, value: Number(curPrice), isFuture: false });
-    for (const p of futureDaily) map.set(p.date, { date: p.date, value: Number(p.value), isFuture: true });
+  // 合并（历史 + 今天 + 未来）
+  const map = new Map<string, ChartRow>();
+  for (const r of histRows) map.set(r.date, { ...r, isFuture: false });
+  if (Number.isFinite(curPrice)) map.set(todayISO, { date: todayISO, value: Number(curPrice), isFuture: false });
+  for (const p of futureDaily) map.set(p.date, { date: p.date, value: Number(p.value), isFuture: true });
 
-    return Array.from(map.values())
-      .filter((x) => Number.isFinite(x.value))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [history7, forecastRes, selectedStock?.currentPrice]);
+  return Array.from(map.values())
+    .filter((x) => Number.isFinite(x.value))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}, [history7, forecastRes, selectedStock?.currentPrice, selectedStock?.predictions]);
 
   const fmtMoney = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -799,82 +936,92 @@ const updatedText = diag?.generated_at
         <>
           {/* Model Performance */}
 {/* Model Performance – 数据驱动版（直接替换原来的四宫格） */}
+{/* Model Performance – 前端诊断版 */}
+{/* ==== 四宫格：直接数据显示 ==== */}
 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-  {(() => {
-    // 1) Accuracy
-    const accPct = Math.round(Number(selectedStock?.accuracy ?? 0) * 100);
-
-    // 2) Risk
-    const risk = (selectedStock?.risk ?? "Medium") as "Low" | "Medium" | "High";
-    const riskTone =
-      risk === "Low"
-        ? { text: "text-green-700", bg: "from-green-50 to-white", sub: "text-green-600" }
-        : risk === "High"
-        ? { text: "text-red-700", bg: "from-red-50 to-white", sub: "text-red-600" }
-        : { text: "text-amber-700", bg: "from-amber-50 to-white", sub: "text-amber-600" };
-
-    // 3) Best timeframe = 置信度最高的周期
-    const preds = Array.isArray(selectedStock?.predictions) ? selectedStock!.predictions : [];
-    const best = [...preds].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
-    const bestLabel = best?.period ?? "1-4 Weeks";
-
-    // 4) Data points：优先后端 meta；否则用图表点数作为回退
-    const dp =
-      Number(forecastRes?.meta?.n_obs) ||
-      Number(forecastRes?.n_obs) ||
-      Number(forecastRes?.data_points) ||
-      Number.isFinite((chartData as any[])?.length) ? (chartData as any[]).length : 0;
-
-return (
-  <>
-    {/* Accuracy */}
-    <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-white p-5">
-      <div className="flex items-center gap-2 mb-1">
-        <Target className="h-5 w-5 text-blue-600" />
-        <span className="text-sm font-medium text-blue-700">Model Accuracy</span>
-      </div>
-      <p className="text-3xl font-extrabold text-blue-700 leading-tight">
-        {Number.isFinite(accPct as any) ? `${accPct}%` : "—"}
-      </p>
-      <p className="text-xs text-blue-600 mt-0.5">Last 90 days</p>
+  {/* 1️⃣ 当前价格 */}
+  <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-white p-5">
+    <div className="flex items-center gap-2 mb-1">
+      <Target className="h-5 w-5 text-blue-600" />
+      <span className="text-sm font-medium text-blue-700">Current Price</span>
     </div>
+    <p className="text-3xl font-extrabold text-blue-700 leading-tight">
+      {Number.isFinite(selectedStock?.currentPrice)
+        ? `$${selectedStock.currentPrice.toFixed(2)}`
+        : "—"}
+    </p>
+    <p className="text-xs text-blue-600 mt-0.5">
+      {selectedStock?.lastUpdated
+        ? `Updated ${selectedStock.lastUpdated}`
+        : "—"}
+    </p>
+  </div>
 
-    {/* Risk */}
-    <div className={`rounded-2xl border p-5 bg-gradient-to-r ${riskTone.bg} ${riskTone.text} border-opacity-60`}>
-      <div className="flex items-center gap-2 mb-1">
-        <AlertCircle className="h-5 w-5" />
-        <span className="text-sm font-medium">Risk Level</span>
-      </div>
-      <p className="text-3xl font-extrabold leading-tight">{risk}</p>
-      <p className={`text-xs mt-0.5 ${riskTone.sub}`}>Volatility based</p>
+  {/* 2️⃣ 选中周期预测价格 */}
+  <div className="rounded-2xl border border-green-200 bg-gradient-to-r from-green-50 to-white p-5">
+    <div className="flex items-center gap-2 mb-1">
+      <Calendar className="h-5 w-5 text-green-700" />
+      <span className="text-sm font-medium text-green-700">Forecast Price ({selectedPeriod})</span>
     </div>
+    <p className="text-3xl font-extrabold text-green-800 leading-tight">
+      {Number.isFinite(currentPrediction?.predictedPrice)
+        ? `$${currentPrediction.predictedPrice.toFixed(2)}`
+        : "—"}
+    </p>
+    <p className="text-xs text-green-700 mt-0.5">
+      Based on model: {selectedStock?.method?.toUpperCase()}
+    </p>
+  </div>
 
-    {/* Best Timeframe (by confidence / diagnostics) */}
-    <div className="rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white p-5">
-      <div className="flex items-center gap-2 mb-1">
-        <Calendar className="h-5 w-5 text-emerald-700" />
-        <span className="text-sm font-medium text-emerald-700">Best Timeframe</span>
-      </div>
-      <p className="text-3xl font-extrabold text-emerald-800 leading-tight">{bestLabel}</p>
-      <p className="text-xs text-emerald-700 mt-0.5">Highest confidence</p>
+  {/* 3️⃣ 置信度 */}
+  <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-white p-5">
+    <div className="flex items-center gap-2 mb-1">
+      <AlertCircle className="h-5 w-5 text-amber-700" />
+      <span className="text-sm font-medium text-amber-700">Confidence</span>
     </div>
+    <p className="text-3xl font-extrabold text-amber-800 leading-tight">
+      {Number.isFinite(currentPrediction?.confidence)
+        ? `${Math.round(currentPrediction.confidence * 100)}%`
+        : "—"}
+    </p>
+    <p className="text-xs text-amber-700 mt-0.5">
+      Confidence for {selectedPeriod} prediction
+    </p>
+  </div>
 
-    {/* Data Points */}
-    <div className="rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-white p-5">
-      <div className="flex items-center gap-2 mb-1">
-        <BarChart className="h-5 w-5 text-purple-700" />
-        <span className="text-sm font-medium text-purple-700">Data Points</span>
-      </div>
-      <p className="text-3xl font-extrabold text-purple-800 leading-tight">
-        {Number.isFinite(dp as any) ? dp.toLocaleString("en-US") : "—"}
-      </p>
-      <p className="text-xs text-purple-700 mt-0.5">{updatedText}</p>
+  {/* 4️⃣ 涨跌幅 */}
+  <div className="rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 to-white p-5">
+    <div className="flex items-center gap-2 mb-1">
+      <BarChart className="h-5 w-5 text-purple-700" />
+      <span className="text-sm font-medium text-purple-700">Change %</span>
     </div>
-  </>
-);
-
-  })()}
+    {(() => {
+      const cur = Number(selectedStock?.currentPrice);
+      const pred = Number(currentPrediction?.predictedPrice);
+      if (!Number.isFinite(cur) || !Number.isFinite(pred) || cur === 0)
+        return <p className="text-3xl font-extrabold text-gray-500 leading-tight">—</p>;
+      const delta = pred - cur;
+      const pct = (delta / cur) * 100;
+      const up = delta >= 0;
+      return (
+        <>
+          <p
+            className={`text-3xl font-extrabold leading-tight ${
+              up ? "text-green-700" : "text-red-700"
+            }`}
+          >
+            {up ? "▲" : "▼"} {pct.toFixed(2)}%
+          </p>
+          <p className="text-xs text-purple-700 mt-0.5">
+            {up ? "Expected increase" : "Expected decrease"}
+          </p>
+        </>
+      );
+    })()}
+  </div>
 </div>
+
+
 
 
           {/* Stock Info + Chart */}
@@ -1058,7 +1205,7 @@ return (
               isAnimationActive={false}
               connectNulls
             />
-            <Line
+            {/* <Line
               type="monotone"
               dataKey={(d: any) => (d.isFuture ? d.value : null)}
               stroke="#5b21b6"
@@ -1067,7 +1214,7 @@ return (
               dot={{ r: 4 }}
               isAnimationActive={false}
               connectNulls
-            />
+            /> */}
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -1079,36 +1226,76 @@ return (
 
 
               {/* Predictions list */}
-              <div className="space-y-4">
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="text-xl font-semibold text-gray-900 mb-3">All Predictions</h4>
-                  <div className="space-y-3">
-                    {selectedStock.predictions.map((pred) => (
-                      <div key={pred.period} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-b-0">
-                        <span className="text-sm text-gray-600">{pred.period}</span>
-                        <div className="text-right">
-                          <span className="text-sm font-semibold text-gray-900">
-                            {Number.isFinite(pred.predictedPrice) ? `$${pred.predictedPrice.toFixed(2)}` : "—"}
-                          </span>
-                          <div className="text-sm text-gray-500">{Math.round(pred.confidence * 100)}% confidence</div>
+{/* ====== All Predictions (Enhanced UI) ====== */}
+<div className="space-y-4">
+  <div className="rounded-2xl border border-blue-100 bg-gradient-to-b from-white via-blue-50 to-blue-100/30 shadow-md p-6">
+    <div className="flex items-center justify-between mb-5">
+      <h4 className="text-2xl font-extrabold text-blue-800 tracking-tight flex items-center gap-2">
+        📊 All Predictions
+      </h4>
+      <span className="text-sm text-blue-600 font-medium">
+        {selectedStock.symbol} • {selectedStock.method.toUpperCase()}
+      </span>
+    </div>
 
-                        </div>
-                      </div>
-                    ))}
-                    {!selectedStock.predictions.length && <div className="text-sm text-gray-500">No predictions yet.</div>}
-                  </div>
-                </div>
+    {selectedStock.predictions.length ? (
+      <div className="divide-y divide-blue-100">
+        {selectedStock.predictions.map((pred) => {
+          const up = pred.change >= 0;
+          const color = up ? "text-green-600" : "text-red-600";
+          const barColor = up
+            ? "bg-gradient-to-r from-green-400 to-emerald-500"
+            : "bg-gradient-to-r from-red-400 to-pink-500";
 
-                {/* <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-900 mb-2">💡 Key Insights</h4>
-                  <ul className="text-sm text-blue-800 space-y-1">
-                    <li>• Higher accuracy for shorter-term predictions</li>
-                    <li>• Model incorporates 15+ technical indicators</li>
-                    <li>• Real-time sentiment analysis included</li>
-                    <li>• Risk-adjusted confidence scoring</li>
-                  </ul>
-                </div> */}
+          return (
+            <div
+              key={pred.period}
+              className="flex items-center justify-between py-3 hover:bg-white/70 transition-all duration-200 rounded-lg px-2"
+            >
+              {/* Period */}
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    up ? "bg-green-500" : "bg-red-500"
+                  }`}
+                ></div>
+                <span className="text-base font-medium text-gray-700">
+                  {pred.period}
+                </span>
               </div>
+
+              {/* Value + Confidence */}
+              <div className="text-right min-w-[130px]">
+                <div className={`text-lg font-bold ${color}`}>
+                  {Number.isFinite(pred.predictedPrice)
+                    ? `$${pred.predictedPrice.toFixed(2)}`
+                    : "—"}{" "}
+                  {up ? "▲" : "▼"}
+                </div>
+                <div className="flex items-center justify-end gap-2 mt-1">
+                  <div className="relative w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={`${barColor} h-2 rounded-full transition-all`}
+                      style={{ width: `${Math.round(pred.confidence * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-500">
+                    {Math.round(pred.confidence * 100)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    ) : (
+      <div className="text-sm text-gray-500 text-center py-6">
+        No predictions yet.
+      </div>
+    )}
+  </div>
+</div>
+
             </div>
           </div>
         </>
