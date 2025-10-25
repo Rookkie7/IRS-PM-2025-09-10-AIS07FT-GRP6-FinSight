@@ -89,9 +89,13 @@ class Settings(BaseSettings):
     LLM_MODEL: str = Field("deepseek-8b", alias="LLM_MODEL")
 
     # Rag flow
-    RAGFLOW_BASE_URL: str = Field(..., env="RAGFLOW_BASE_URL")  # RAGFlow 的 HTTP 服务地址
-    RAGFLOW_API_KEY: str = Field(..., env="RAGFLOW_API_KEY")
-    RAGFLOW_MODEL: str = Field(..., env="RAGFLOW_MODEL")
+    # RAGFLOW_BASE_URL: str = Field(..., env="RAGFLOW_BASE_URL")  # RAGFlow 的 HTTP 服务地址
+    # RAGFLOW_API_KEY: str = Field(..., env="RAGFLOW_API_KEY")
+    # RAGFLOW_MODEL: str = Field(..., env="RAGFLOW_MODEL")
+    RAGFLOW_BASE_URL: str | None = Field(default=None)
+    RAGFLOW_API_KEY: str | None = Field(default=None)
+    RAGFLOW_MODEL: str | None = Field(default=None)
+
     RAGFLOW_APP_ID: str = ""  # RAGFlow 应用/流水线ID（如需要）
     RAGFLOW_TIMEOUT: int = 60  # 超时时间(s)
     RAG_MAX_HISTORY_TURNS: int = 8  # 多轮记忆条数上限（每次取尾部N轮）
