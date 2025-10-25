@@ -102,15 +102,24 @@ function persistCacheToSession() {
 }
 // 推荐股票（使用页面登录的 userId）
 export async function fetchRecommendedSymbols(userId = "demo", topK = 10) {
-  const url = `${API}/stocks/recommend?user_id=${encodeURIComponent(userId)}&top_k=${topK}`;
-  const res = await fetch(url, { credentials: "include" });
-  if (!res.ok) throw new Error("Failed to load recommended stocks");
+  const params = new URLSearchParams({
+    user_id: encodeURIComponent(userId),
+    top_k: String(topK),
+    risk_profile: "balanced", // 如需暴露给 UI，可改成参数
+  });
+
+  const res = await fetch(`${API}/stocks/recommend/v2?${params.toString()}`, {
+    credentials: "include",
+  });
+
+  if (!res.ok) throw new Error("Failed to load recommended stocks (v2)");
+
   const data = await res.json();
   const recs = Array.isArray(data?.recommendations) ? data.recommendations : [];
-  // 后端可能是 {ticker} 或 {symbol}
+
+  // 后端对象可能是 {ticker} 或 {symbol}
   return recs.map((r: any) => r.ticker ?? r.symbol).filter(Boolean);
 }
-
 
 // ====== 小工具 ======
 function relativeFromNow(iso: string) {
