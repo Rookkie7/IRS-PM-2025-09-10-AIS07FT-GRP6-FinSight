@@ -1,5 +1,5 @@
 import React from 'react';
-import { Newspaper, Target, Brain, TrendingUp } from 'lucide-react';
+import { Newspaper, Target, Brain, TrendingUp, GitCompare } from 'lucide-react';
 
 interface Tab {
   id: string;
@@ -17,6 +17,7 @@ const tabs: Tab[] = [
   { id: 'recommendations', label: 'Stock Recommend', icon: <Target className="h-5 w-5" /> },
   { id: 'analyst', label: 'AI Analyst', icon: <Brain className="h-5 w-5" /> },
   { id: 'predict', label: 'Stock Predict', icon: <TrendingUp className="h-5 w-5" /> },
+  { id: 'pairstrading', label: 'Pairs Trading', icon: <GitCompare className="h-5 w-5" /> },
 ];
 
 export const TabNavigation: React.FC<TabNavigationProps> = ({ activeTab, onTabChange }) => {
