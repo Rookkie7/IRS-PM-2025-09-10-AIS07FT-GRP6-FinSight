@@ -93,7 +93,7 @@ export async function fetchForecastBatchResultsOnly(options?: Parameters<typeof 
 
 
 
-/** ✅ 单只预测：/forecast?ticker=...&horizon_days=...&horizons=...&method=... */
+
 export async function fetchForecast(
   ticker: string,
   horizonsOrHorizon: number[] | number = 7,
@@ -117,31 +117,33 @@ export async function fetchForecast(
   return res.json();
 }
 
-/** （可选）批量：/forecast/batch?method=...&limit=...&symbols=... */
-export async function fetchForecastBatch(params: {
-  method?: string;
+type BatchParams = {
+  method: string;
+  horizons: number[];          // e.g., [7,30,90,180]
   limit?: number;
-  symbolsCsv?: string;   // "AAPL,TSLA"
-  horizons?: number[];
-  horizon_days?: number;
-  concurrency?: number;
-} = {}) {
+  horizon_days?: number;       // 万一你想传（后端也有）
+  symbols?: string[];          // ★ 新增：指定股票集合
+};
+
+export async function fetchForecastBatch(params: BatchParams) {
+  const {
+    method,
+    horizons,
+    limit = 10,
+    horizon_days,
+    symbols,
+  } = params;
+
   const qs = new URLSearchParams();
-  if (params.method) qs.set("method", params.method);
-  if (params.limit != null) qs.set("limit", String(params.limit));
-  if (params.symbolsCsv) qs.set("symbols", params.symbolsCsv);
-  if (params.horizons?.length) qs.set("horizons", params.horizons.join(","));
-  else if (params.horizon_days != null) qs.set("horizon_days", String(params.horizon_days));
-  if (params.concurrency != null) qs.set("concurrency", String(params.concurrency));
+  qs.set("method", method);
+  qs.set("limit", String(limit));
+  qs.set("horizons", horizons.join(","));     // 后端参数是字符串 "7,30,90,180"
+  if (horizon_days != null) qs.set("horizon_days", String(horizon_days));
+  if (symbols && symbols.length) qs.set("symbols", symbols.join(",")); // ★ 关键
 
   const res = await fetch(`${BASE}/forecast/batch?${qs.toString()}`);
-  if (!res.ok) throw new Error(`batch error ${res.status}: ${await res.text()}`);
-
-  const data = await res.json(); // { ok:[{ticker,result}], fail:[...] }
-  if (Array.isArray(data?.ok)) {
-    return data.ok.map((e: any) => e.result as ForecastResult);
-  }
-  throw new Error("Unexpected /forecast/batch response");
+  if (!res.ok) throw new Error("Failed to load forecast batch");
+  return res.json();
 }
 
 /** 单只股票基础信息（拿公司名等）：/forecast/stock?ticker= */
