@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Sequence, Optional, Tuple
 from dataclasses import dataclass
 import math, random
-import torch  # noqa: F401
-import numpy as np  # noqa: F401
+import torch
+import numpy as np
 class LstmForecaster:
     """
     轻量 LSTM 预测器（增强版）
@@ -19,13 +19,13 @@ class LstmForecaster:
         self,
         model=None,
         device: str = "cpu",
-        lookback: int = 64,        # 滑窗长度（历史步）
-        hidden_size: int = 64,
+        lookback: int = 48,        # 滑窗长度（历史步）
+        hidden_size: int = 128,
         num_layers: int = 2,
         dropout: float = 0.1,
-        epochs: int = 100,          # 小训练轮次
+        epochs: int = 200,          # 小训练轮次
         lr: float = 1e-3,
-        train_split: float = 0.85, # 训练/验证划分（顺序切分）
+        train_split: float = 0.8, # 训练/验证划分（顺序切分）
         patience: int = 10,        # 早停
         min_train_points: int = 80,# 最少样本点，不足则回退
         block_len: int = 16,       # 时间块长度（类似 notebook 的 timestamp）

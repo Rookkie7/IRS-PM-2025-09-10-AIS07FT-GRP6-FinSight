@@ -8,6 +8,7 @@ from app.services.auth_service import AuthService
 from app.services.stock_recommender import MultiObjectiveRecommender
 from app.services.stock_service import StockService
 from app.services.user_service import UserService
+from fastapi import HTTPException
 
 from config import settings
 from adapters.db.news_repo import NewsRepo
@@ -81,6 +82,10 @@ def get_rec_service():
     return RecService(vector_index=get_vector_index(), dim=settings.DEFAULT_VECTOR_DIM)
 
 def get_rag_service():
+    if not settings.ragflow_enabled:
+        # 未配置就禁用或返回一个空实现
+        # 选1：直接 503 更清晰
+        raise HTTPException(status_code=503, detail="RAG service is not configured.")
     return RagService()
 
 
