@@ -1,15 +1,11 @@
 from __future__ import annotations
-from typing import List, Tuple, Literal
+from typing import List
 import math
 from datetime import datetime, timezone, timedelta
 
-from app.adapters.db.news_repo import NewsRepo, EventRepo
-from app.domain.models import NewsItem, UserProfile, BehaviorEvent
+from app.domain.models import NewsItem, BehaviorEvent
 from app.adapters.embeddings.hash_embedder import HashingEmbedder
-from app.repositories.inmemory import InMemoryNewsRepo, InMemoryProfileRepo, InMemoryEventRepo
-from app.repositories.pg_profile_repo import PgProfileRepo
-from app.utils.similarity import cosine, recency_score
-import numpy as np
+from app.adapters.db.inmemory import InMemoryNewsRepo, InMemoryProfileRepo, InMemoryEventRepo
 import logging
 
 log = logging.getLogger("app.services.news_service")

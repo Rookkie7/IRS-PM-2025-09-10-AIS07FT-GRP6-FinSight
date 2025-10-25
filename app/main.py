@@ -39,7 +39,7 @@ logging.basicConfig(
 # —— 你的“推荐系统”依赖注入体系（保持原样）—— #
 from app.adapters.embeddings.hash_embedder import HashingEmbedder
 from app.adapters.embeddings.projecting_embedder import ProjectingEmbedder
-from app.repositories.pg_profile_repo import PgProfileRepo
+from app.adapters.db.pg_profile_repo import PgProfileRepo
 from app.services.news_service import NewsService
 # 为你的模块设置更详细的日志级别
 logging.getLogger("app.services.stock_recommender").setLevel(logging.DEBUG)
@@ -59,8 +59,6 @@ logging.getLogger("app.services.stock_recommender").setLevel(logging.DEBUG)
 
 
 import logging
-
-from app.utils.healthy import check_database_connection
 
 logging.getLogger("app.repos.mongo_news").setLevel(logging.WARNING)
 logging.getLogger("app.ingest").setLevel(logging.WARNING)
