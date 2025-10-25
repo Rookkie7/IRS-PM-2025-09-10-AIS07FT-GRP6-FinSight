@@ -5,11 +5,12 @@ import { NewsTab } from './components/News/NewsTab';
 import { RecommendationsTab } from './components/Recommendations/RecommendationsTab';
 import { AnalystTab } from './components/Analyst/AnalystTab';
 import { PredictTab } from './components/Predict/PredictTab';
+import PairsTradingTab from './components/PairsTrading/PairsTradingTab';
 import { useAuth } from './components/Auth/AuthContext.tsx';
 import { LoginPage } from './components/Auth/LoginPage';
 import { RegisterPage } from './components/Auth/RegisterPage';
 
-type TabKey = 'news' | 'recommendations' | 'analyst' | 'predict';
+type TabKey = 'news' | 'recommendations' | 'analyst' | 'predict' | 'pairstrading';
 
 function App() {
     const [activeTab, setActiveTab] = useState<TabKey>('news');
@@ -28,6 +29,8 @@ function App() {
                 return <AnalystTab />;
             case 'predict':
                 return <PredictTab />;
+            case 'pairstrading':
+                return <PairsTradingTab />;
             default:
                 return <NewsTab />;
         }
