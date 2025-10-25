@@ -19,9 +19,3 @@ pnpm dev
 
 
 
-## Pages
-- `/` Dashboard
-- `/news` News browser (GET /news)
-
-
-
