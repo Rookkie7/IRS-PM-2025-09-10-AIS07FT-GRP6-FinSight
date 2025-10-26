@@ -1,0 +1,11 @@
+vllm>=0.5
+accelerate
+fastapi
+uvicorn[standard]
+httpx
+faiss-cpu>=1.8
+sentence-transformers
+transformers
+torch
+unstructured
+trafilatura

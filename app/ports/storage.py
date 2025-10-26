@@ -1,0 +1,16 @@
+from typing import Optional
+from abc import ABC, abstractmethod
+from app.model.models import UserInDB, UserCreate
+
+class StoragePort:
+    ...
+
+class UserRepoPort(ABC):
+    @abstractmethod
+    async def create_user(self, user: UserCreate, hashed_password: str) -> str: ...
+    @abstractmethod
+    async def get_by_email(self, email: str) -> Optional[UserInDB]: ...
+    @abstractmethod
+    async def get_by_id(self, uid: str) -> Optional[UserInDB]: ...
+    @abstractmethod
+    async def update_profile(self, uid: str, profile: dict) -> None: ...
