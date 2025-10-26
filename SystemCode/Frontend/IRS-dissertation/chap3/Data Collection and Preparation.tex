@@ -1,0 +1,109 @@
+\chapter{Data Collection and Preparation}
+
+At the outset, we acknowledge that privacy and security, compliance, and ethical sourcing will be important; also making sure we respect copyright, data licensing especially for non‐public / proprietary data.
+
+\section{User Profiles}
+
+\textbf{User Profiles} is the core data structure for storing 32-dimensional user profiles, every user gets his own user profile which contains these dimensions:
+
+\begin{enumerate}
+	\item Industry preferences (11-d)
+    \begin{enumerate}
+        \item utilities
+        \item technology
+        \item consumer defensive
+        \item healthcare
+        \item basic materials
+        \item real estate
+        \item energy
+        \item industrials
+        \item consumer cyclical
+        \item communication services
+        \item financial
+    \end{enumerate}
+	\item Investment preferences(9-d)
+    \begin{enumerate}
+        \item market value
+        \item growth value
+        \item dividend
+        \item risk tolerance
+        \item liquidity
+        \item quality
+        \item valuation safety
+        \item momentum
+        \item efficiency
+    \end{enumerate}
+\end{enumerate}
+
+\section{News}
+
+Our news pipeline was implemented as a disciplined “fetch $\rightarrow$ normalize $\rightarrow$ deduplicate $\rightarrow$ enrich $\rightarrow$ vectorize $\rightarrow$ store” loop. In practice, our primary data sources are the \textbf{Google \acs{RSS}} feeds (for broad coverage) and the \textbf{Marketaux \acs{API}} (for structured financial press releases and real-time company news). Google \acs{RSS} allows wide retrieval across multiple outlets by ticker and keyword queries, while \Marketaux provides curated financial headlines with tickers, sentiment, and metadata, which we merge and normalize during ingestion.
+
+In production, we diverged from the initial 32-dimensional design and adopted a \textbf{two-vector representation}: a 64-d semantic embedding for article content and a 20-d user-preference projection (refer to the user profile) derived from sector/themes and interaction signals. This split lets us maintain high semantic recall while offering a compact, human-interpretable preference space for personalization. The \textbf{ingestion} layer cleans titles and URLs, collapses duplicates by canonical URL and external IDs, enriches documents with tickers, sectors, and sentiment from Marketaux, and stores the resulting enriched entries (with both vectors) in \textbf{MongoDB}. This design achieves the proposal’s intent: every article is stored with transparent \textbf{metadata}, traceable \textbf{origin}, and semantically searchable \textbf{embeddings} while remaining aligned with the system’s “user profile plus vector similarity” paradigm.
+
+
+
+
+\section{Stocks}
+
+\subsection{Data Sources and Collection Methodology}
+The stock recommendation system employs a comprehensive data acquisition strategy utilizing Yahoo Finance (yfinance) as the primary data source. The system targets the \textbf{top 100 companies} by market capitalization from the S\&P 500 index, ensuring coverage of major market segments and sufficient liquidity for investment recommendations.
+
+\subsection{Data Processing Pipeline}
+The raw stock data undergoes extensive \textbf{processing} to transform it into structured features suitable for recommendation algorithms:
+
+\begin{table}[h]
+\centering
+\caption{Stock Data Processing Pipeline Stages}
+\begin{tabular}{|p{3cm}|p{8cm}|p{2cm}|}
+\hline
+\textbf{Processing Stage} & \textbf{Description} & \textbf{Output} \\
+\hline
+\textbf{Basic Info Extraction} & Extracts fundamental \textbf{company attributes} including sector classification, market capitalization, and geographic information & Structured JSON \\
+\hline
+\textbf{Financial Ratio Calculation} & Computes key \textbf{financial metrics}: profit margins, growth rates, valuation multiples, and dividend information & Numerical Features \\
+\hline
+\textbf{Historical Analysis} & Processes price \textbf{time series} to derive volatility measures, momentum indicators, and trading volume patterns & Time-series Features \\
+\hline
+\textbf{Business Context} & Captures \textbf{qualitative} information through company descriptions and business summaries & Textual Data \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Feature Engineering and Vector Representation}
+Each stock will be represented as a \textbf{20-dimensional vector} to enable similarity matching with user profiles. The vector is constructed by reducing dimensionality of structured financial features and encoded textual content from company descriptions and filings. Each vector contains these dimensions (same as user profile):
+
+\begin{equation}
+\text{Stock Vector}_{20d} = [\text{Sector Features}_{11d} \oplus \text{Investment Features}_{9d}]
+\end{equation}
+
+\textbf{Sector Feature Vector (11 dimensions):}
+\begin{itemize}
+    \item One-hot encoding representation across 11 predefined sectors
+    \item Sectors include: Technology, Healthcare, Financial Services, Consumer Cyclical, Consumer Defensive, Energy, Industrials, Real Estate, Utilities, Communication Services, and Basic Materials
+    \item Enables sector-based diversification in recommendations
+\end{itemize}
+
+\textbf{Investment Feature Vector (9 dimensions):}
+\begin{enumerate}
+    \item \textbf{Market Capitalization Score}: Logarithmic scaling from small to large cap (0-1)
+    \item \textbf{Growth-Value Orientation}: Based on PEG ratio analysis (0=value, 1=growth)
+    \item \textbf{Dividend Attractiveness}: Combined dividend yield and payout ratio assessment
+    \item \textbf{Risk Level}: Volatility and beta coefficient composite
+    \item \textbf{Liquidity Score}: Trading volume-based liquidity measure
+    \item \textbf{Quality Metrics}: Profitability and return on equity combination
+    \item \textbf{Valuation Safety}: Inverse PE and PB ratio safety margin
+    \item \textbf{Momentum Strength}: Short and medium-term price momentum
+    \item \textbf{Operational Efficiency}: Operating margin and asset turnover composite
+\end{enumerate}
+
+\subsection{Data Storage Architecture}
+The system employs a \textbf{dual-database architecture} to optimize for *different* data access patterns:
+
+\begin{itemize}
+    \item \textbf{MongoDB}: Stores raw, unstructured stock data with flexible schema to accommodate varying data availability across different stocks
+    \item \textbf{PostgreSQL}: Houses processed 20-dimensional vectors and structured stock metadata for efficient similarity computations
+    \item \textbf{Data Synchronization}: Automated pipeline ensures consistency between raw data and processed vectors
+\end{itemize}
+
+The processed 20-dimensional stock vectors serve as the fundamental building blocks for both basic similarity-based recommendations and advanced multi-objective optimization, providing a rich feature representation that captures both fundamental characteristics and market behavior patterns.
