@@ -22,20 +22,21 @@ Operationally, we engineered the stack to be practical: automated ingestion and 
 
 | Official Full Name  | Student ID (MTech Applicable)  | Work Items (Who Did What) | Email (Optional) |
 | :------------ |:---------------:| :-----| :-----|
-| **Huo Yiming** | **A0328696J** | xxxxxxxxxx yyyyyyyyyy zzzzzzzzzz|  |
-| **Li Jiajun** | **A0326795M** | xxxxxxxxxx yyyyyyyyyy zzzzzzzzzz|  |
-| **Samarth Soni** | **A0329960U** | xxxxxxxxxx yyyyyyyyyy zzzzzzzzzz|  |
-| **SU Yuxuan** | **A0329926N** | xxxxxxxxxx yyyyyyyyyy zzzzzzzzzz|  |
-| **Wang Yixi** | **A0328469M** | xxxxxxxxxx yyyyyyyyyy zzzzzzzzzz| e1547224@u.nus.edu |
+| **Huo Yiming** | **A0328696J** | Full-stack stock recommendation system development<br/><br/>Stock Data pipeline & Vector architecture (MongoDB/PostgreSQL)<br/><br/>Create Basic Stock recommendation and Advanced stock recommendation service | e1553023@u.nus.edu |
+| **Li Jiajun** | **A0326795M** | Led the overall system design and full-stack development<br/>Built frontend and backend infrastructures.<br/>Integrated MongoDB and PostgreSQL databases deployed on AWS EC2.<br/>Developed user authentication and RAG-based AI Financial Analyst modules. | jiajunli@u.nus.edu |
+| **Samarth Soni** | **A0329960U** | Optimized LLM performance and enhanced knowledge base updates.<br/>Established standardized contribution and submission guidelines.<br/>Participated in the architectural design of the AI Analyst module.<br/>Contributed to comprehensive technical and project documentation writing. | samarth.soni@u.nus.edu |
+| **SU Yuxuan** | **A0329926N** | Developed the News Browsing and Recommendation Module<br/>Implemented news ingestion<br/>Built the dual-vector recommendation system <br/>Integrated real-time user feedback updates for adaptive ranking and personalization. | E1554253@u.nus.edu |
+| **Wang Yixi** | **A0328469M** | **Developed the stock forecasting module of the FinSight system.**<br/> **Utilized recommended tickers from the recommendation engine for prediction tasks.**<br/> **Implemented six forecasting models: Transformer, LSTM, Seq2Seq, ARIMA, LightGBM, and Prophet.**<br/> **Achieved accurate short-term stock trend forecasting across selected equities.** | e1547224@u.nus.edu |
 
 ---
 
 ## SECTION 4 : VIDEO OF SYSTEM MODELLING & USE CASE DEMO
 
-[![Sudoku AI Solver](http://img.youtube.com/vi/-AiYLUjP6o8/0.jpg)](https://youtu.be/-AiYLUjP6o8 "Sudoku AI Solver")
+[2025 FALL NUS ISS AIS07 IRS5001 GRP6 FinSight Promotion Video](https://www.youtube.com/watch?v=bolGMzWV9H4)
 
-Note: It is not mandatory for every project member to appear in video presentation; Presentation by one project member is acceptable. 
-More reference video presentations [here](https://telescopeuser.wordpress.com/2018/03/31/master-of-technology-solution-know-how-video-index-2/ "video presentations")
+[2025 FALL NUS ISS AIS07 IRS5001 GRP6 FinSight System Demonstration](https://www.youtube.com/watch?v=etfMw8lXQlI)
+
+
 
 ---
 
@@ -46,9 +47,6 @@ More reference video presentations [here](https://telescopeuser.wordpress.com/20
 ### Backend
 
 ```shell
-git clone https :// github.com/jiajun -lab/ FinSight_BackEnd .git
-FinSight_BackEnd
-cd FinSight_BackEnd
 # Create virtual environment
 uv venv
 source .venv/bin/ activate
@@ -63,20 +61,15 @@ uvicorn app.main:app --reload --port 8000
 ### Frontend
 
 ```shell
-# 1) Clone this repository
-git clone https :// github.com/jiajun -lab/ FinSight_Frontend .git
-FinSight_FrontEnd
-cd FinSight_FrontEnd
-
-# 2) In this folder :
+# 1) In this folder :
 pnpm i
-# 3) set backend endpoint ( optional ; default already localhost ):
+# 2) set backend endpoint ( optional ; default already localhost ):
 echo 'VITE_BACKEND_BASE_URL =http ://127.0.0.1:8000 ' > .env
 
-# 4) run
+# 3) run
 pnpm dev
 
-# 5) quick restart
+# 4) quick restart
 rm -rf node_modules pnpm -lock.yaml package -lock.json # optional clean
 reboot
 pnpm i
@@ -105,6 +98,12 @@ To connect, simply place finsight_keypair.pem in the project root. The program w
    ```
    RAGFLOW_API_KEY =<your -key >
    ```
+
+### Repository
+
+https://github.com/jiajun-lab/FinSight_Frontend
+
+https://github.com/jiajun-lab/FinSight_BackEnd
 
 ---
 ## SECTION 6 : PROJECT REPORT / PAPER
