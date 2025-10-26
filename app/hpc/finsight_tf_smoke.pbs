@@ -1,0 +1,125 @@
+#!/bin/bash
+# ===== PBS HEADER =====
+# Job name (helps grouping)
+#PBS -N sam_finsight_train
+# Bill to project (set your real project ID; else it uses personal credits)
+# # PBS -P finsight
+#PBS -A finsight
+# Walltime (edit)
+#PBS -l walltime=01:00:00
+# One GPU vnode (A40 + 36 cores + ~250GB RAM); see guide
+#PBS -l select=1:ncpus=36:mpiprocs=1:ompthreads=36:mem=240gb:ngpus=1
+# Merge stdout/stderr
+#PBS -j oe
+
+set -eox pipefail
+
+# ---- Edit these in one place when need to change stacks ----
+TF_MODULE="TensorFlow/2.11.0-foss-2022a-CUDA-11.7.0" # We Pick one known-good and stick with it across runs
+VENV="$HOME/.venvs/finsight-tf211-cuda117"
+# --------------------------------------------------------
+
+
+# ===== USER KNOBS - project tagging and paths =====
+export PROJECT_TAG="finsight"
+export WORK="$HOME/projects-sam/FinSight-QuantLab"
+export SRC="$WORK/src"                  # your code lives here
+export DATA="$WORK/data"                # your small/immutable data lives here (or point to /scratch/project/CFP.../)
+export OUT="$WORK/results/models"               # long-term models
+#export OUT="$WORK/models/$PROJECT_TAG"
+export LOG="$WORK/results/logs"                 # long-term logs
+export SCRATCH="/scratch/$USER/$PBS_JOBID"   # job-local scratch
+export MODE="${MODE:-train}"            # train | sanity_gpu | sanity_cpu
+
+# CPU/GPU env knobs for Threads & GPU behavior (tune if you know better after profiling)
+export TF_NUM_INTRAOP_THREADS=${TF_NUM_INTRAOP_THREADS:-36}
+export TF_NUM_INTEROP_THREADS=${TF_NUM_INTEROP_THREADS:-2}
+export TF_ENABLE_ONEDNN_OPTS=${TF_ENABLE_ONEDNN_OPTS:-1}
+export TF_FORCE_GPU_ALLOW_GROWTH=${TF_FORCE_GPU_ALLOW_GROWTH:-true}
+# export TF_XLA_FLAGS="--tf_xla_auto_jit=2"   # enable after testing
+
+# ===== PREP =====
+mkdir -p "$SCRATCH" "$OUT" "$LOG"
+#Stream ALL job stdout/stderr into a live file on /scratch (and still show in PBS too)
+#    -> you can `tail -f /scratch/$USER/$PBS_JOBID/pbs.live.$PBS_JOBID.out`
+exec > >(stdbuf -oL tee -a "$SCRATCH/pbs.live.$PBS_JOBID.out") 2>&1
+
+
+echo "[ENV] Host: $(hostname)"
+echo "[ENV] Job : $PBS_JOBID"
+echo "[ENV] Mode: $MODE"
+echo "[ENV] Out : $OUT"
+echo "[ENV] Log : $LOG"
+echo "[ENV] Scratch: $SCRATCH"
+
+# ===== MODULES =====
+module purge
+# Load exact TF stack (no auto-detect)
+module purge
+module load "$TF_MODULE"
+
+# ===== VENV (create once, then reuse) =====
+# One venv per TF module is safest
+# Activate the matching venv
+source "$VENV/bin/activate"
+
+# Diagnostics; show GPU/TF
+command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi || true
+python - <<'PY'
+import tensorflow as tf, os
+print("TF", tf.__version__, "GPUs:", tf.config.list_physical_devices("GPU"))
+PY
+
+# ===== SANITY MODES =====
+if [ "$MODE" = "sanity_gpu" ]; then
+  echo "[MODE] GPU sanity"
+  python - <<'PY'
+import tensorflow as tf
+gpus = tf.config.list_physical_devices("GPU")
+print("GPUs:", gpus)
+if gpus:
+    for g in gpus: tf.config.experimental.set_memory_growth(g, True)
+    with tf.device("/GPU:0"):
+        import tensorflow as tf
+        a=tf.random.uniform([4096,4096]); b=tf.random.uniform([4096,4096]); _=tf.linalg.matmul(a,b).numpy()
+    print("TF GPU matmul OK")
+else:
+    print("No GPU visible to TF")
+PY
+  exit 0
+fi
+
+if [ "$MODE" = "sanity_cpu" ]; then
+  echo "[MODE] CPU sanity"
+  python - <<'PY'
+import tensorflow as tf, multiprocessing as mp
+print("CPUs:", mp.cpu_count())
+a=tf.random.uniform([3000,3000]); b=tf.random.uniform([3000,3000]); _=tf.linalg.matmul(a,b).numpy()
+print("TF CPU matmul OK")
+PY
+  exit 0
+fi
+
+# ===== STAGE CODE IN → RUN → STAGE OUT =====
+cd "$SCRATCH"
+rsync -a "$SRC/" ./src/
+mkdir -p ./out
+
+# (Example) run your trainer; adapt args as needed
+# Make sure your train.py respects TF thread envs; optionally mirror in code:
+#   tf.config.threading.set_intra_op_parallelism_threads(int(os.getenv("TF_NUM_INTRAOP_THREADS","36")))
+#   tf.config.threading.set_inter_op_parallelism_threads(int(os.getenv("TF_NUM_INTEROP_THREADS","2")))
+set -x
+python -u ./src/train_tf_smoke.py \
+  --data_root "$DATA" \
+  --out_dir  "$SCRATCH/out" \
+  2>&1 | tee "$SCRATCH/train.$PROJECT_TAG.$PBS_JOBID.log"
+set +x
+
+# Stage results back (single source of truth under your repo)
+rsync -av "$SCRATCH/out/" "$OUT/"
+rsync -av "$SCRATCH/train.$PROJECT_TAG.$PBS_JOBID.log" "$LOG/"
+
+# (Optional) Clean scratch — scratch auto-purges >~60 days anyway
+# rm -rf "$SCRATCH"
+echo "[DONE] Outputs in $OUT and logs in $LOG"
