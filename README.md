@@ -46,6 +46,8 @@ Operationally, we engineered the stack to be practical: automated ingestion and 
 
 `Refer to appendix <Installation & User Guide> in project report at Github Folder: ProjectReport`
 
+**Please see detailed user guide in ProjectReport/FinSight_IRS_dissertation.pdf**
+
 ### Backend
 
 ```shell
