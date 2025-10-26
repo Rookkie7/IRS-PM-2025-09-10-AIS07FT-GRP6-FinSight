@@ -1,0 +1,125 @@
+\begin{figure}[t]
+  \centering
+  \begin{adjustbox}{width=\textwidth,max height=0.95\textheight}
+  \begin{tikzpicture}[
+    node distance=10mm and 14mm,
+    >={Latex[length=2mm]},
+    tiny/.style={font=\tiny},
+    box/.style={rounded corners=2pt,draw,fill=white,align=center,inner sep=3pt,
+                minimum width=28mm,minimum height=7mm},
+    wide/.style={rounded corners=2pt,draw,fill=white,align=center,inner sep=3pt,
+                 minimum width=56mm,minimum height=8mm},
+    group/.style={dash pattern=on 2pt off 2pt,rounded corners=3pt,draw=gray!60,inner sep=8pt},
+    grouplabel/.style={font=\tiny\bfseries,fill=white,inner sep=2pt}
+  ]
+
+  % ===== Ingestion =====
+  \node[box,tiny] (news)    {News/APIs};
+  \node[box,tiny,right=of news] (filings) {Filings\\(EDGAR/SGX)};
+  \node[box,tiny,right=of filings] (uploads) {User Docs};
+
+  % ===== Parse / Embed stack =====
+  \node[wide,tiny,below=13mm of $(news)!0.5!(uploads)$] (extract)
+     {Extract / Parse\\ \scriptsize Trafilatura (web) | Unstructured (files)};
+  \node[wide,tiny,below=of extract] (chunk)
+     {Chunk \& Normalize\\ \scriptsize overlap + metadata (URL, doc, page)};
+  \node[wide,tiny,below=of chunk] (embed)
+     {Embeddings\\ \scriptsize BGE/E5 encoders};
+
+  \draw[->] (news) -- (extract);
+  \draw[->] (filings) -- (extract);
+  \draw[->] (uploads) -- (extract);
+  \draw[->] (extract) -- (chunk);
+  \draw[->] (chunk) -- (embed);
+
+  % ===== Vector Stores (wider spacing) =====
+  \coordinate (vecbase) at ($(embed) + (0,-20mm)$);
+  \node[box,tiny] (uvec) at ($(vecbase)+(-48mm,0)$) {User\\Vectors};
+  \node[box,tiny] (nvec) at ($(vecbase)+(-16mm,0)$) {News\\Vectors};
+  \node[box,tiny] (svec) at ($(vecbase)+(16mm,0)$)  {Ticker\\Vectors};
+  \node[box,tiny] (retr) at ($(vecbase)+(48mm,0)$)  {LLM Retriever\\Index};
+
+  % Embed -> vectors: 4 arrows from embed, through junction, to each vector store
+  \coordinate (embedjunction) at ($(embed.south) + (0,-5mm)$);
+  \draw[->,rounded corners=3pt] (embed.south) -- (embedjunction) -| (uvec.north);
+  \draw[->,rounded corners=3pt] (embed.south) -- (embedjunction) -| (nvec.north);
+  \draw[->,rounded corners=3pt] (embed.south) -- (embedjunction) -| (svec.north);
+  \draw[->,rounded corners=3pt] (embed.south) -- (embedjunction) -| (retr.north);
+
+  % ===== Signals (left side column with more space) =====
+  \coordinate (sigcol) at ($(uvec) + (-42mm,0)$);
+  \node[box,tiny] (risk) at ($(sigcol)+(0, 13mm)$) {Risk Lens\\ \scriptsize vol/beta};
+  \node[box,tiny] (sent) at ($(sigcol)+(0,  0mm)$) {Finance\\Sentiment\\ \scriptsize FinBERT};
+  \node[box,tiny] (fcst) at ($(sigcol)+(0,-13mm)$) {Forecasting\\ \scriptsize LSTM/Xformers};
+
+  % Signal connections with curved arrows (fluid routing)
+  \draw[->,rounded corners=3pt] (uvec.west) to[out=180,in=0] (risk.east);
+  \draw[->,rounded corners=3pt] (nvec.south west) to[out=220,in=0] (sent.east);
+  \draw[->,rounded corners=3pt] (svec.south west) to[out=240,in=0] (fcst.east);
+
+  % ===== Retrieve & Rerank =====
+  % Define a consolidation point for all vector inputs
+  \coordinate (consolidation) at ($(vecbase) + (0,-20mm)$);
+  
+  \node[wide,tiny,below=20mm of $(nvec)!0.5!(svec)$] (ann)
+    {ANN Retrieval (cosine/IP)\\ \scriptsize FAISS (HPC) | pgvector (Postgres)};
+  \node[box,tiny,right=16mm of ann] (rerank)
+    {Cross-Encoder\\Reranker\\ \scriptsize bge-reranker-v2-m3};
+
+  % All four vector stores converge to single point on ANN box
+  \draw[->,rounded corners=3pt] (uvec.south) -- ++(0,-8mm) -| (consolidation) -- (ann.north);
+  \draw[->,rounded corners=3pt] (nvec.south) -- ++(0,-5mm) -| (consolidation);
+  \draw[->,rounded corners=3pt] (svec.south) -- ++(0,-5mm) -| (consolidation);
+  \draw[->,rounded corners=3pt] (retr.south) -- ++(0,-8mm) -| (consolidation);
+  
+  \draw[->] (ann) -- (rerank);
+
+  % ===== RAG + Serving =====
+  \node[wide,tiny,below=13mm of $(ann)!0.5!(rerank)$] (rag)
+    {RAG Layer\\ \scriptsize FastAPI (custom) | RAGFlow (orchestration)};
+  \draw[->] (rerank.south) -- (rag.north);
+
+  \node[wide,tiny,below=of rag] (llm)
+    {LLM Server\\ \scriptsize vLLM (OpenAI-compatible) | Ollama/DeepSeek};
+  \draw[->] (rag) -- (llm);
+
+  % ===== Outputs =====
+  \node[box,tiny,below left=13mm and 8mm of llm] (answers)
+    {Analyst-style\\Answers\\ \scriptsize reasoning +\\citations};
+  \node[box,tiny,below right=13mm and 8mm of llm] (feeds)
+    {News/\\Watchlists\\ \scriptsize "what changed"\\+ tags};
+
+  % Both output arrows: 2 arrows from llm, through junction, to each output box
+  \coordinate (llmout) at ($(llm.south) + (0,-5mm)$);
+  \draw[->,rounded corners=3pt] (llm.south) -- (llmout) -| (answers.north);
+  \draw[->,rounded corners=3pt] (llm.south) -- (llmout) -| (feeds.north);
+
+  % ===== GROUPS (behind, with labels on right side) =====
+  \begin{scope}[on background layer]
+    \node[group,fit=(news)(filings)(uploads)] (ing) {};
+    \node[grouplabel,anchor=south,yshift=3mm] at (ing.north) {Ingestion};
+    
+    \node[group,fit=(extract)(chunk)(embed)] (parse) {};
+    \node[grouplabel,anchor=west] at (parse.east) {Parsing \& Embedding};
+    
+    \node[group,fit=(uvec)(nvec)(svec)(retr)] (vec) {};
+    \node[grouplabel,anchor=west] at (vec.east) {Vector Stores};
+    
+    \node[group,fit=(risk)(sent)(fcst)] (sig) {};
+    \node[grouplabel,anchor=south] at (sig.north) {Signals};
+    
+    \node[group,fit=(ann)(rerank)] (ret) {};
+    \node[grouplabel,anchor=west] at (ret.east) {Retrieve \& Rerank};
+    
+    \node[group,fit=(rag)(llm)(answers)(feeds)] (gen) {};
+    \node[grouplabel,anchor=north east,xshift=-2mm,yshift=-2mm] at (gen.north east) {Generation/Serving};
+  \end{scope}
+
+  \end{tikzpicture}
+  \end{adjustbox}
+  \caption{FinSight overview: ingest $\rightarrow$ parse $\rightarrow$ embed $\rightarrow$ retrieve \& rerank $\rightarrow$ generate.
+  Vector search is the backbone (FAISS on HPC; pgvector for persistent Postgres-backed search). Sidecars provide sentiment, risk and
+  short-horizon forecasts. For RAG, retrieval is reranked, then fed to an LLM server---OpenAI-compatible vLLM or Ollama/DeepSeek
+  behind RAGFlow---for grounded answers with citations.}
+  \label{fig:finsight-overview}
+\end{figure}

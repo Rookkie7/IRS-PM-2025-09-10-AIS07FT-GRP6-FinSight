@@ -1,0 +1,28 @@
+%% For tips on how to write a great abstract, have a look at
+%%	-	https://www.cdc.gov/stdconference/2018/How-to-Write-an-Abstract_v4.pdf (presentation, start here)
+%%	-	https://users.ece.cmu.edu/~koopman/essays/abstract.html
+%%	-	https://search.proquest.com/docview/1417403858
+%%  - 	https://www.sciencedirect.com/science/article/pii/S037837821830402X
+
+\begin{abstract}
+\bigskip
+\noindent
+{\textbf{Start Date}: 10th Sept, 2025}
+\hfill
+{\textbf{Duration}: 1.5 months}
+\\
+{\textbf{Submission}: 26th Oct, 2025}
+\bigskip \par
+\begin{center}
+\textbf{\large A unified platform providing reliable, real-time market intelligence for investors and analysts.}
+\end{center}
+\par
+At FinSight, we’ve tried to cover all fronts of data science that help a market participant get the big picture at a glance and act fast. We learn each user’s preferences and tailor what we surface: relevant news, an evolving list of interesting stocks, short-horizon predictions on the names that matter, and a specialised \acs{LLM} that behaves like a personal financial research analyst---reading your docs, explaining its thinking, and showing its work. \par
+All actionable items get value-added annotations: news sentiment tags from a finance-tuned classifier (e.g., \acs{FinBERT}), a lightweight risk lens on stocks, and a projected stock movement view using deep time-series/recurrent models. For narrative answers, we use \ac{RAG} so the \acs{LLM} cites the exact passages it relied on. We emphasise explainability: clear reasoning traces, citations, and intuitive visuals---so a human can audit why a conclusion was reached and what would change it. This helps us in grounding responses in evidence and reducing hallucinations. \par
+On the data side, we stream in news and filings continuously, parse the text, and maintain vector embeddings for users, news items, and tickers alongside the vectors we use for \acs{LLM} retrieval. We then score relationships with standard similarity measures (cosine/inner-product) so the system can match “you-shaped” interests against fresh content and instruments quickly. This is classic vector search under the hood (\acs{FAISS}/\acs{pgvector}), but tuned for markets: fast nearest-neighbour lookups to power news recommendations, stock watchlists, and context retrieval for the \acs{LLM}. \par
+Operationally, we engineered the stack to be practical: automated ingestion and chunking of messy PDFs/docs, vector search to pull the right context quickly, and a lightweight serving layer that scales from our laptops to \acs{GPU}s on the cluster. This collaboration grounds the project in real market workflows while giving us hands-on exposure to production-grade financial \acs{AI}---where reliability, latency, and traceability matter as much as raw accuracy. \\
+\textbf{Keywords}{: DL, GPT, SQL, LSTM, LLM, RAG, NLP, Agile, Python, Transformers, FAISS, pgvector, Time-Series, Prompt Engineering, Fine-Tuning, Evaluation, MLOps, Data Ops; refer to Abbreviations section}\\
+\textbf{Project Areas}{: Intelligent Reasoning, Knowledge Bases, LLM Serving, Fine-Tuning, Data Ingestion \& Preparation, Feature Engineering, Data Visualization, Exploratory \& Statistical Analysis, Machine Learning, Time-Series Forecasting, RAG Pipelines, Tooling \& Agents, Documentation, Software Engineering, CI/CD \& Automation, Observability \& Evaluation}
+    
+\end{abstract}
+
