@@ -4,7 +4,7 @@
 
 ## SECTION 1 : PROJECT TITLE
 ### FinSight: Intelligent Stock Predictionand Advisory Platform
-![Overview of FinSight](images/Main.png)
+![Overview of FinSight](images/Main.jpg)
 ---
 
 ## SECTION 2 : EXECUTIVE SUMMARY / PAPER ABSTRACT
