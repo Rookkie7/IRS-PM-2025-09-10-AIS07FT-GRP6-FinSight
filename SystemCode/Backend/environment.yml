@@ -1,0 +1,73 @@
+# environment.yml
+name: finsight
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - fastapi>=0.111
+  - uvicorn>=0.30
+  - pydantic>=2.7
+  - pydantic-settings>=2.2,<3
+  - numpy>=1.26
+  - httpx>=0.27
+  - beautifulsoup4>=4.12
+  - feedparser>=6.0
+  - sentence-transformers>=3.0
+  - scikit-learn>=1.5
+  - python-dotenv>=1.0
+  - loguru>=0.7
+  - motor>=3.6
+  - pymongo>=4.7
+  - pytorch>=2.2        # ← conda 的包名
+
+
+  # # --- Web API 基础 ---
+  # - fastapi>=0.111
+  # - uvicorn>=0.30
+  # - pydantic>=2.7
+  # - python-dotenv>=1.0
+  # - orjson>=3.10
+
+  # # --- 数据处理 / 工具 ---
+  # - numpy>=1.26
+  # - pandas>=2.2
+  # - pyyaml>=6.0
+  # - loguru>=0.7
+  # - tqdm>=4.66
+  # - tenacity>=8.3
+
+  # # --- 抓取 / 解析 ---
+  # - httpx>=0.27
+  # - aiohttp>=3.9
+  # - beautifulsoup4>=4.12
+  # - lxml>=5.2
+  # - feedparser>=6.0
+
+  # # --- NLP / 向量化（Sentence-Transformers 会自动带 Torch 等依赖）---
+  # - scikit-learn>=1.5
+  # - sentence-transformers>=3.0
+  # - nltk>=3.9
+  # - rapidfuzz>=3.9
+
+  # # --- 存储 / 异步任务（按需可注释掉）---
+  # - motor>=3.3          # Async MongoDB 客户端；若用同步可换成 pymongo>=4.6
+  # - redis-py>=5.0
+  # - celery>=5.4
+
+  # # --- 开发/测试 ---
+  # - ipykernel
+  # - pytest
+  # - pytest-asyncio
+
+  # pip 段只放 conda 没有或你想锁为最新的包（此处留空/按需追加）
+  - pip
+  - pip:
+      # - some-extra-package==x.y.z
+      # 示例：- newspaper3k==0.2.8
+      - psycopg[binary,pool]>=3.2
+      - pgvector>=0.2.5
+      - requests 
+      - feedparser 
+      - apscheduler>=3.10
+# update
+# conda env update -f environment.yml --prune

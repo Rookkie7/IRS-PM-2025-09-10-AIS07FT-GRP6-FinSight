@@ -1,0 +1,22 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: finsight-mongo
+    ports: ["27017:27017"]
+    volumes: [ "mongo_data:/data/db" ]
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: finsight-pg
+    environment:
+      POSTGRES_USER: finsight
+      POSTGRES_PASSWORD: finsight
+      POSTGRES_DB: finsight
+    ports: ["5432:5432"]
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+
+volumes:
+  mongo_data:
+  pg_data:
