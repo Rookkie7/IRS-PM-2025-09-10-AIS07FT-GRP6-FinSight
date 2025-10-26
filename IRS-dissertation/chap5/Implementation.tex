@@ -1,0 +1,399 @@
+\chapter{Implementation Detail}
+
+\section{News Browsing Module}
+
+This section details how the news module was built to realize the system design: a two vector recommender (64-d semantic, 20-d preference) with exclude-seen filtering, dual refresh, and low-latency APIs. We focus on concrete engineering choices—ingestion, storage schemas, scoring, profile updates, paging/cache behavior, and observability—so the reader can reproduce the system end-to-end.
+
+\subsection{API Design and Implementation}
+
+The News Browsing Module is implemented through a structured set of RESTful API endpoints using the FastAPI framework, aligning directly with the modular architecture described earlier. Each endpoint is linked to a dedicated router function, backed by a clear service–repository abstraction that isolates business logic from database operations.
+
+\textbf{Core API Endpoints and Functionalities:}
+
+\begin{table}[h]
+\centering
+\caption{News Browsing API Endpoints Overview}
+\begin{tabular}{|p{4cm}|p{2.5cm}|p{3.5cm}|p{4cm}|}
+\hline
+\textbf{API Endpoint} & \textbf{Method} & \textbf{Parameters} & \textbf{Implementation Details} \\
+\hline
+/rec/user/news & GET & user\_id, limit, refresh, exclude\_hours, symbols & Retrieve personalized ranked news; supports \texttt{refresh=\{0,1\}} dual-mode fetching \\
+\hline
+/users/event/\{click|like|bookmark\} & POST & user\_id, news\_id, op & Log user interactions, update 20-d user profile vector incrementally \\
+\hline
+/debug/news/latest & GET & None & Fetch the latest 9 stored news entries for initial UI rendering \\
+\hline
+/news/fetch-batch & POST & watchlist, window, source & Trigger batch ingestion from Google RSS and Marketaux APIs \\
+\hline
+\end{tabular}
+\end{table}
+
+The module exposes lightweight endpoints optimized for fast response times and minimal latency. For instance, \texttt{/rec/user/news} handles both cached database retrieval (\texttt{refresh=0}) and live update mode (\texttt{refresh=1}), while the \texttt{/users/event} endpoints synchronize user feedback with immediate vector updates in PostgreSQL. Each endpoint follows consistent patterns of schema validation, logging, and structured JSON response generation.
+
+\subsection{Ingestion, Normalization, and Storage}
+
+The pipeline is implemented as a disciplined loop
+\[
+\text{fetch}\;\rightarrow\;\text{normalize}\;\rightarrow\;\text{deduplicate}\;\rightarrow\;\text{enrich}\;\rightarrow\;\text{vectorize}\;\rightarrow\;\text{store}.
+\]
+\textbf{Sources} consist of Google RSS (broad, fast-moving headlines) and Marketaux API (finance-focused, ticker-aware feed). Each item is canonically keyed by \(\{\texttt{url}, \texttt{external\_id}\}\) to avoid duplicates across sources. Normalization trims titles, resolves redirects, strips boilerplate, and harmonizes timestamps to UTC.
+
+\textbf{Storage split.} Enriched news documents are written into \textbf{MongoDB} (\texttt{NewsRepo}) with fields:
+\[
+d=\{\texttt{news\_id},\texttt{title},\texttt{url},\texttt{source},\texttt{published\_at},\texttt{tickers},\texttt{sector},\texttt{topics},\mathbf{e}_{64},\mathbf{p}_{20}\}.
+\]
+User profiles live in \textbf{PostgreSQL + pgvector} (\texttt{PgProfileRepo}). We maintain:
+\begin{itemize}
+  \item Two semantic tracks: \(\texttt{user\_semantic\_64d\_short}\) and \(\texttt{user\_semantic\_64d\_long}\in\mathbb{R}^{64}\) (EMA with different half-lives).
+  \item A human-interpretable preference vector \(\mathbf{u}\in\mathbb{R}^{20}\) aligned to 11 sector + 9 investment-style dimensions. For compatibility and ease of evolution, we store a JSON-mirrored copy as \(\texttt{profile\_vector\_20d}::\texttt{TEXT}\) and component JSONs \(\texttt{industry\_preferences}, \texttt{investment\_preferences}\) (both \texttt{JSON}). Reads/writes normalize to a fixed-length 20-d list to avoid schema drift.
+\end{itemize}
+Append-only user events (\texttt{click/like/bookmark}) are recorded in Mongo (\texttt{EventRepo}); a small \texttt{user\_event\_toggles} collection supports idempotent add/remove for UI toggles.
+
+\subsection{Ranking Path (\texttt{/rec/user/news}) and Exclude-Seen}
+
+The recommendation endpoint constructs a candidate slate and ranks it with a compact score. For database-only mode (\(\texttt{refresh}=0\)), candidates are pulled from Mongo by \(\texttt{latest}(K)\). If the client is on the last page and requests \(\texttt{refresh}=1\), the service performs a \emph{trickle refresh}: fetches \(\le 3\) fresh items from Marketaux (optionally guided by the page’s \emph{top-3 tickers}), upserts, then re-queries latest. Recently interacted items are filtered out using a sliding-window set from \texttt{EventRepo}:
+\[
+\mathcal{C}' \;=\; \{a\in\mathcal{C}\mid a.\texttt{news\_id}\notin \texttt{seenIds}(u;\Delta T)\}.
+\]
+Scoring blends preference match, mild recency, and slate-level diversity:
+\[
+s(u,a)=\alpha\,\cos(\mathbf{u},\mathbf{p}_{20}(a))\;+\;\beta\,f_{\text{recency}}(a)\;+\;\gamma\,f_{\text{div}}(a\mid\mathcal{S}),
+\quad s\in[0,1].
+\]
+We truncate to \(N=9\) for a single page. The endpoint returns a thin JSON for UI: \(\{\texttt{title},\texttt{url},\texttt{source},\texttt{published\_at},\texttt{tickers},\texttt{sector},\texttt{score}\}\).
+
+\subsection{Online Profile Updates and Event Handling}
+
+The feedback loop is closed by three endpoints: \texttt{/users/event/click}, \texttt{/users/event/like}, \texttt{/users/event/bookmark}. Clicks log dwell time and optionally carry \(\texttt{liked}/\texttt{bookmarked}\) flags; likes and bookmarks are toggleable (add/remove) with idempotency enforced in Mongo. Profile updates happen synchronously in Postgres:
+
+\paragraph{Click-driven semantic EMA.}
+Let \(\mathbf{e}_{64}(a)\) be article embedding and \(w\) the event weight
+\[
+w \;=\; 1 \;+\; 0.5\,\mathbf{1}[\text{dwell}\ge 10\text{s}] \;+\; 0.5\,\mathbf{1}[\text{liked}] \;+\; 0.5\,\mathbf{1}[\text{bookmarked}].
+\]
+We apply per-track EMA after L2-normalization:
+\[
+\mathbf{u}^{(\text{short})}\!\leftarrow (1-\eta_s)\mathbf{u}^{(\text{short})} + \eta_s\,w\,\widehat{\mathbf{e}}_{64}(a),\quad
+\mathbf{u}^{(\text{long})}\!\leftarrow (1-\eta_\ell)\mathbf{u}^{(\text{long})} + \eta_\ell\,w\,\widehat{\mathbf{e}}_{64}(a).
+\]
+
+\paragraph{Preference (20-d) updates.}
+For positive actions (\texttt{add}) we nudge toward the article’s \(\mathbf{p}_{20}(a)\) with small learning rates on two segments (sector 11-d and style 9-d), using EMA on the actually-hit dimensions; for removals (\texttt{remove}) we apply fixed decrements \((\delta_{\text{ind}},\delta_{\text{inv}})\) only on the dimensions the article meaningfully activated. All writes re-serialize to a canonical 20-d JSON string (\texttt{profile\_vector\_20d}) and update the component JSONs. This design avoids snapshot brittleness while guaranteeing the stored shape of \(\mathbf{u}\) remains a dense 20-d list.
+
+\subsection{Caching, Refresh, and Front-End Integration}
+
+The client-side rendering follows a paginated layout (\(3\times3\) grid) managed by React. Pages are cached locally in browser memory, and navigation among cached pages (\texttt{previous/next/jump}) does not trigger network calls. The backend only refreshes content when:
+\[
+\text{user\_on\_last\_page} \;\land\; \text{next\_clicked} \;\Rightarrow\; \texttt{refresh}=1.
+\]
+In that case, the server fetches at most 3 fresh items, upserts them into MongoDB, re-ranks the corpus, and returns the updated slate. This “dual refresh mode” guarantees minimal latency (\(<200\) ms typical) and conforms to API quota limits.  
+
+The front end also integrates lightweight event listeners for each interaction type:
+\begin{itemize}
+  \item \texttt{onClick}: logs click duration and news ID.
+  \item \texttt{onLike / onBookmark}: toggles user preferences visually and asynchronously triggers backend updates.
+\end{itemize}
+This pipeline completes a full feedback loop where user behavior directly refines recommendation results without blocking the UI.  
+
+Overall, the implementation harmonizes real-time responsiveness with model interpretability—achieving low-latency news personalization consistent with the architectural design goals.
+
+
+\section{Stock Recommendation Module Implementation}
+
+\subsection{API Design and Implementation}
+
+The stock recommendation module implements a comprehensive RESTful API based on FastAPI framework. The API endpoints are organized in dedicated router files and follow consistent patterns for request handling, validation, and response formatting.
+
+\textbf{Core API Endpoints and Functionality:}
+
+\begin{table}[h]
+\centering
+\caption{Stock Recommendation API Endpoints Overview}
+\begin{tabular}{|p{3.5cm}|p{2.5cm}|p{3cm}|p{4cm}|}
+\hline
+\textbf{API Endpoint} & \textbf{Method} & \textbf{Parameters} & \textbf{Implementation Approach} \\
+\hline
+/stocks/recommend & GET & user\_id, top\_k, diversity\_factor & Basic recommendation using cosine similarity with sector diversification \\
+\hline
+/stocks/recommend/v2 & GET & user\_id, top\_k, risk\_profile & Multi-objective optimization with parallel component scoring \\
+\hline
+/stocks/raw-data/\{symbol\} & GET & symbol & Direct MongoDB document retrieval with data cleaning \\
+\hline
+/stocks/fetch-raw-data & POST & symbols & Batch yfinance data fetching with MongoDB storage \\
+\hline
+/stocks/update-vectors & POST & symbols & 20D vector computation and PostgreSQL update \\
+\hline
+/users/behavior/update & POST & user\_id, behavior\_type, stock\_symbol & Real-time user preference adjustment \\
+\hline
+\end{tabular}
+\end{table}
+
+
+
+\subsection{Basic Recommendation Algorithm Implementation}
+
+The basic recommendation algorithm implements a sequential workflow focused on vector similarity with intelligent diversification. The complete implementation flow is illustrated in Figure \ref{fig:basic_implementation_flow}.
+
+\begin{figure}[h]
+\centering
+\textbf{[Basic Recommendation Implementation Flowchart Description]}
+\fbox{
+\begin{minipage}{0.9\textwidth}
+\begin{enumerate}
+\setlength\itemsep{0.5em}
+\item \textbf{Input Processing}: Receive user ID, top-K count, and diversity factor parameters
+\item \textbf{Data Retrieval}: Fetch user vector from user\_profiles table and all stock vectors from stock\_vectors table in PostgreSQL
+\item \textbf{Similarity Computation}: Calculate cosine similarity between user vector and each stock vector using scikit-learn's cosine\_similarity function
+\item \textbf{Initial Ranking}: Sort all stocks by raw similarity scores in descending order
+\item \textbf{Diversification Processing}: 
+  \begin{itemize}
+  \item Initialize empty selected stocks list and sectors seen set
+  \item For each stock in sorted order:
+    \begin{itemize}
+    \item Apply sector penalty if sector already in sectors seen set
+    \item Calculate final score: raw similarity - (diversity factor × sector penalty)
+    \item Add stock to selected list and sector to sectors seen set
+    \end{itemize}
+  \item Stop when selected list reaches top-K size
+  \end{itemize}
+\item \textbf{Result Generation}: Format recommendations with symbols, names, sectors, and both raw/adjusted similarity scores
+\item \textbf{API Response}: Return structured JSON response to client
+\end{enumerate}
+\end{minipage}
+}
+\caption{Basic Recommendation Algorithm Implementation Flow}
+\label{fig:basic_implementation_flow}
+\end{figure}
+
+The algorithm begins by retrieving the user's 20-dimensional preference vector from the user\_profiles table alongside all available stock vectors from the stock\_vectors table in PostgreSQL. These vectors are pre-computed and encapsulate both sector characteristics and investment style preferences.
+
+The core computation involves calculating cosine similarity between the user vector and each stock vector using scikit-learn's optimized linear algebra routines. This produces raw similarity scores representing the fundamental alignment between user preferences and stock characteristics. The stocks are then sorted by these raw scores in descending order.
+
+The diversification mechanism represents the algorithm's key innovation. Rather than simply selecting the top-K highest similarity stocks, the system maintains a running set of selected sectors and applies configurable penalties to stocks from already-represented sectors. The diversification factor parameter (typically 0.1) controls the penalty magnitude, balancing pure similarity against sector diversity. This ensures the final recommendations provide exposure across multiple industries while maintaining high relevance to user preferences.
+
+The complete implementation resides in the StockService.recommend\_stocks() method, with the diversification logic encapsulated in the \_diversify\_recommendations() helper method. The algorithm is optimized for low-latency responses, typically completing within 100-200 milliseconds for standard stock universes, making it suitable for real-time recommendation scenarios.
+
+\subsection{Advanced Multi-Objective Recommendation Implementation}
+
+The advanced recommendation algorithm implements a sophisticated parallel processing pipeline that balances four distinct investment objectives through weighted optimization. The complete implementation architecture is illustrated in Figure \ref{fig:advanced_implementation_flow}.
+
+\begin{figure}[h]
+\centering
+\textbf{[Advanced Recommendation Implementation Flowchart Description]}
+\fbox{
+\begin{minipage}{0.9\textwidth}
+\begin{enumerate}
+\setlength\itemsep{0.5em}
+\item \textbf{Parameter Processing}: Receive user ID, top-K count, and risk profile parameters
+\item \textbf{Parallel Data Acquisition}:
+  \begin{itemize}
+  \item Fetch user vector from PostgreSQL
+  \item Retrieve all stock vectors from PostgreSQL
+  \item Batch fetch raw stock data from MongoDB
+  \item Analyze current market regime using SPY ETF data
+  \end{itemize}
+\item \textbf{Concurrent Component Scoring}:
+  \begin{itemize}
+  \item \textbf{Preference Similarity}: Cosine similarity between user and stock vectors
+  \item \textbf{Risk-Adjusted Return}: Expected return / volatility calculations
+  \item \textbf{Diversification Benefit}: 1 - sector concentration analysis
+  \item \textbf{Market Timing}: Regime-adaptive scoring based on current market conditions
+  \end{itemize}
+\item \textbf{Weight Application}: Apply risk-profile-specific weights to each component score
+\item \textbf{Composite Scoring}: Calculate final scores using weighted sum of components
+\item \textbf{Explanation Generation}: Create detailed rationales for each recommendation
+\item \textbf{Result Delivery}: Return ranked recommendations with comprehensive scoring breakdown
+\end{enumerate}
+\end{minipage}
+}
+\caption{Advanced Recommendation Algorithm Implementation Flow}
+\label{fig:advanced_implementation_flow}
+\end{figure}
+
+The advanced algorithm begins with parallel data acquisition, simultaneously fetching multiple data sources to minimize latency. This includes retrieving the user vector and stock vectors from PostgreSQL, batch-fetching raw stock data from MongoDB for fundamental analysis, and analyzing current market regime conditions using \acf{SPY ETF} data through yfinance integration.
+
+The core innovation lies in the \textbf{concurrent computation of} four objective components. The \textbf{preference similarity} component calculates alignment between user and stock vectors using cosine similarity, identical to the basic algorithm. Simultaneously, the \textbf{risk-adjusted return component} computes expected returns based on historical performance, growth projections, and valuation metrics, then normalizes by volatility to produce Sharpe ratio-inspired scores.
+
+The \textbf{diversification benefit} scoring analyzes sector concentration across the entire stock universe, assigning higher scores to stocks from underrepresented sectors to promote portfolio balance. Concurrently, the \textbf{market timing} component evaluates how well each stock aligns with the current market regime, favoring high-beta growth stocks in bull markets and defensive dividend stocks in bear markets.
+
+After all component scores are computed, the system applies \textbf{dynamic weights} based on the user's specified risk profile. Conservative profiles (weights: 0.2 preference, 0.4 risk return, 0.3 diversification, 0.1 timing) emphasize safety and balance, while aggressive profiles (weights: 0.3 preference, 0.5 risk return, 0.1 diversification, 0.1 timing) prioritize returns and growth potential.
+
+The weighted combination produces final scores that balance multiple investment considerations, followed by explanation generation that synthesizes component scores into human-readable rationales. This entire parallel workflow is implemented in the MultiObjectiveRecommender.recommend\_stocks() method and typically completes within 300-500 milliseconds, providing comprehensive multi-factor analysis while maintaining responsive performance.
+
+Both algorithms integrate with the user behavior tracking system through the /users/behavior/update API endpoint, allowing real-time preference updates based on user interactions. This creates an adaptive feedback loop where user engagement continuously refines the underlying preference vectors, creating increasingly personalized investment guidance over time.
+% ==========================================================================================
+\section{Stock Trend Prediction Module}
+
+\subsection{API Design and Implementation}
+
+The stock forecasting module provides time\–series\–based prediction capabilities through a structured FastAPI service layer. Each endpoint encapsulates model orchestration, data retrieval, and standardized response formatting to ensure consistency across forecasting algorithms.
+
+\textbf{Core API Endpoints and Functionality:}
+
+\begin{table}[h]
+\centering
+\caption{Stock Forecast API Endpoints Overview}
+\begin{tabular}{|p{4cm}|p{2.5cm}|p{3cm}|p{4cm}|}
+\hline
+\textbf{API Endpoint} & \textbf{Method} & \textbf{Parameters} & \textbf{Implementation Approach} \\
+\hline
+/forecast/\{ticker\} & GET & ticker, horizons, method & Main entry point for model-based forecasting (ARIMA / Prophet / LGBM / LSTM) \\
+\hline
+/forecast/batch & GET & limit, method, ticker & Batched multi-stock forecasting for dashboard display \\
+\hline
+/forecast/prices7 & GET & ticker & Retrieve last 7 days’ closing prices from MongoDB \\
+\hline
+/forecast/cache/refresh & POST & symbols & Refresh cached predictions and update MongoDB forecast collection \\
+\hline
+\end{tabular}
+\end{table}
+
+Each endpoint is implemented in the \texttt{forecast\_router.py} file, interacting with the \texttt{ForecastService} layer for business logic. Data is retrieved from MongoDB (historical price series) and optionally persisted to PostgreSQL for analytical storage. All responses are serialized into standardized JSON objects containing dates, predicted values, confidence intervals, and model metadata.
+
+\subsection{Basic Forecasting Pipeline Implementation}
+
+The basic forecasting pipeline provides short-horizon (7\–30 days) predictions using lightweight statistical and machine learning models. The complete implementation workflow is summarized in Figure \ref{fig:basic_forecast_flow}.
+
+\begin{figure}[h]
+\centering
+\textbf{[Basic Forecasting Implementation Flowchart Description]}
+\fbox{
+\begin{minipage}{0.9\textwidth}
+\begin{enumerate}
+\setlength\itemsep{0.5em}
+\item \textbf{Request Handling}: Receive ticker symbol, forecast horizon, and model method from the API request.
+\item \textbf{Data Acquisition}: Query MongoDB for recent stock data; preprocess by resampling and forward-filling missing prices.
+\item \textbf{Model Selection}: Dynamically instantiate the chosen model class (ARIMA, Prophet, LGBM, LSTM) through a unified factory method.
+\item \textbf{Training Phase}: Split historical data into training and validation sets; fit the selected model to the training segment.
+\item \textbf{Forecast Generation}: Predict future price trajectory for the specified horizon; compute lower and upper confidence intervals.
+\item \textbf{Post-Processing}: Merge historical and forecast data for chart visualization; log model performance metrics (RMSE, MAE).
+\item \textbf{Caching and Response}: Cache predictions to MongoDB for fast repeated access and return structured JSON to the frontend.
+\end{enumerate}
+\end{minipage}
+}
+\caption{Basic Forecasting Pipeline Implementation Flow}
+\label{fig:basic_forecast_flow}
+\end{figure}
+
+This pipeline leverages modular forecaster classes such as \texttt{ArimaForecaster}, \texttt{ProphetForecaster}, \texttt{LgbmForecaster}, and \texttt{LstmForecaster}, all inheriting from a shared \texttt{Forecaster} base interface. Each subclass implements \texttt{fit()} and \texttt{predict()} methods to standardize model integration. The forecast results are serialized into a unified schema defined in \texttt{ForecastResult} dataclass, ensuring frontend compatibility for chart rendering and diagnostic visualization.
+
+\subsection{Visualization and Diagnostics Integration}
+
+The \textbf{visualization layer} of the Stock Forecast Module is designed to provide users with an intuitive and data-rich interface for understanding predicted market trends. The frontend, built with React and Recharts, consumes data from the \texttt{/forecast/\{ticker\}} endpoints and presents it in an interactive, multi-horizon layout.
+
+
+\textbf{Interface Overview:}
+
+The interface is divided into four main functional regions:
+
+\begin{enumerate}
+\item \textbf{Summary Dashboard (Top Section):}
+  \begin{itemize}
+  \item \textbf{Current Price:} Displays the latest real-time stock price, fetched via the backend \texttt{/forecast/prices7} API.
+  \item \textbf{Forecast Price (1 Day):} Shows the next-day predicted price, along with the model type used (e.g., Transformer, Prophet, LSTM).
+  \item \textbf{Confidence Level:} Indicates the model's confidence in the current prediction, calculated from ensemble variance and normalized between 0--100\%.
+  \item \textbf{Expected Change:} Displays the expected percentage change relative to the current price, color-coded green for positive and red for negative movement.
+  \end{itemize}
+
+\item \textbf{Stock Header and Model Selector:}
+  The selected ticker symbol and the forecasting method are clearly displayed. Dropdown menus at the top-right corner allow users to choose:
+  \begin{itemize}
+  \item Stock ticker (\texttt{AAPL}, \texttt{TSLA}, \texttt{MRK}, etc.)
+  \item Forecasting model (ARIMA, Prophet, LGBM, LSTM, Transformer)
+  \item Prediction limit (number of tickers to visualize)
+  \end{itemize}
+  Clicking the “Refresh” button triggers a new API request to fetch updated forecasts.
+
+\item \textbf{Interactive Trend Chart (Center Section):}
+  The main chart visualizes both recent historical prices and predicted future prices:
+  \begin{itemize}
+  \item \textbf{Blue line:} Historical closing prices over the past 7 days.
+  \item \textbf{Purple line:} Forecasted price trajectory for the next 7\–30 days.
+  \item \textbf{Gradient background:} Fades toward the prediction horizon, visually emphasizing uncertainty growth.
+  \item \textbf{Confidence band:} rendered as a shaded region between upper and lower prediction intervals.
+  \end{itemize}
+  Tabs above the chart allow horizon switching (1 Day, 2 Days, 3 Days, 1 Week, 1 Month). Each selection dynamically updates the chart via client-side state caching to avoid redundant API calls.
+
+\item \textbf{All Predictions Panel (Right Section):}
+  This panel lists all predicted prices across multiple horizons:
+  \begin{itemize}
+  \item Each row includes:
+    \begin{itemize}
+    \item Horizon label 
+    \item Predicted price 
+    \item Confidence score 
+    \item Directional indicator (green upward arrow for increase, red downward arrow for decrease)
+    \end{itemize}
+  \item The color-coded progress bar represents the model’s confidence for each forecast horizon.
+  \item Users can compare forecast progression visually to detect near-term vs long-term model divergence.
+  \end{itemize}
+\end{enumerate}
+
+
+\textbf{User Interaction Flow:}
+\begin{itemize}
+  \item Select a ticker and prediction model.
+  \item Trigger forecast computation via “Refresh”.
+  \item Observe both numeric predictions and graphical trends.
+  \item Optionally explore diagnostics for accuracy assessment.
+\end{itemize}
+
+This visualization layer enables non-technical users to interpret model outputs quickly, while maintaining analytical depth for advanced users. It effectively bridges backend forecasting analytics with an accessible, modern UI consistent with FinSight’s design system.
+
+
+% =====================================================================================
+\section{AI Analyst}
+This part will discuss the implementation details about the AI Analyst. It's about these five parts: Initialization, Chat workflow, History chat management, Integration with Ragflow and Prompt Design.
+
+\subsection{Initialization}
+The Retrieval-Augmented Generation (RAG) subsystem of FinSight is initialized during the application startup phase, when both the FastAPI backend and the RagFlow middleware are brought online. Upon initialization, the backend establishes SSH tunnels to securely connect to the remote MongoDB and PostgreSQL servers and also automatically start a MongoDB and PostgresSQL for Ragflow itself, , ensuring encrypted data flow between local and cloud environments. The initialization routine also instantiates the RagService layer, which provides a unified interface for model invocation, dataset binding, and prompt configuration.
+
+When the frontend loads, it sends asynchronous requests to the backend to fetch the list of available language models and knowledge bases. These lists are retrieved through the /rag/models and /rag/datasets endpoints, which directly communicate with RagFlow’s metadata APIs. If a valid session identifier (session\_id) already exists in the client’s local cache, the backend automatically restores the associated chat context from MongoDB. This mechanism allows the user to seamlessly continue prior sessions without manual re-initialization or redundant network calls.
+
+\subsection{Chat Workflow}
+The chat workflow represents the central operational logic of the RAG module. When a user submits a question from the frontend, the request is sent to the backend endpoint /rag/chat. The RagService first verifies whether a RagFlow session has been previously established for the user. If no session exists, a new chat session is created by invoking RagFlow’s /api/v1/chats endpoint. Each session is assigned a globally unique identifier and is linked to the corresponding user record for persistence.
+
+Once the session is confirmed, the backend retrieves all previous conversation messages stored in MongoDB using the session identifier. These messages, together with the current user query, are compiled into a structured message array that preserves both speaker roles and temporal order. This array is transmitted to RagFlow’s OpenAI-compatible interface /api/v1/chats\_openai/{session\_id}/chat/completions. RagFlow then performs retrieval over the bound datasets, identifies semantically relevant passages, and combines them with the conversation context to produce a grounded answer through the selected large language model (LLM).
+
+The backend receives the generated answer and any associated citations, which are then stored back into MongoDB. Finally, the formatted response is returned to the frontend for display. This message orchestration design ensures both stateless scalability of the backend API and stateful continuity of the user experience.
+
+\subsection{History Management}
+The MongoDB layer provides persistent storage and retrieval for all conversation data, functioning as the memory backbone of the RAG system. Each chat session is stored as a document containing metadata such as session\_id, user\_id, model\_name, timestamps, and an ordered list of messages. Messages are stored with explicit role labels (“user” or “assistant”) to preserve dialog structure and enable accurate reconstruction during subsequent interactions.
+
+When a user requests previous chat history through the endpoint /rag/history/{session\_id}, the backend retrieves and streams the ordered message list directly from MongoDB. This approach allows the frontend to dynamically render complete conversation threads without relying on in-memory caching. To optimize performance, MongoDB collections are indexed by session\_id, created\_at, and updated\_at fields, enabling low-latency retrieval even for long-running sessions.
+
+By separating session metadata from message content, the design supports flexible querying, efficient garbage collection of expired sessions, and simplified analytics. The result is a highly resilient storage layer capable of maintaining conversational state across distributed environments.
+
+\subsection{Integration with RagFlow}
+
+The integration between FinSight’s backend and the RagFlow engine forms the computational core of the RAG system. RagFlow acts as an intelligent middleware that handles document retrieval, ranking, and generation orchestration. When the RagService sends a message payload to RagFlow’s /api/v1/chats\_openai/{id}/chat/completions endpoint, the RagFlow retriever first performs semantic search over the specified datasets using pre-computed embeddings. The retriever ranks results according to cosine similarity and a weighted hybrid metric combining keyword overlap and semantic relevance.
+
+The top-N retrieved passages are then passed into the generation component of RagFlow, which fuses these evidence snippets into the LLM’s context window. The LLM---typically a DeepSeek-R1 or OpenAI-compatible model---produces a structured response grounded in the retrieved evidence. RagFlow returns both the generated text and the reference citations in a unified JSON structure. This dual output allows FinSight to render transparent, explainable answers while preserving the traceability of information sources.
+
+This tight integration abstracts away the complexity of retrieval and ranking from the main backend, enabling developers to swap models or retrievers with minimal changes to the application logic.
+
+\subsection{Prompt Design}
+The RAG prompting system in FinSight is composed of three conceptual layers designed to balance instruction control, user flexibility, and transparency.
+The Base Prompt serves as the foundational instruction template embedded in each RagFlow chat creation request. It defines the assistant’s behavior---such as summarizing knowledge base content, maintaining professional tone, and acknowledging irrelevant results. This ensures consistent task framing across different models and user sessions.
+
+The User Extension layer provides controlled freedom for users to inject task-specific context or additional guidance into the conversation. The backend allows a “user\_prompt” field in the chat creation payload, which is appended to the base prompt under strict validation rules to prevent prompt injection or leakage of system instructions. This mechanism enhances personalization while preserving safety and stability.
+
+Through these layers, the prompt design of FinSight’s RAG subsystem harmonizes factual retrieval with adaptive reasoning, resulting in answers that are both contextually rich and verifiably grounded.
+
+% \section{Combined Investment Recommendation Module}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

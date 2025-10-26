@@ -1,0 +1,181 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% The updated version of this document should be downloaded from
+%%      https://github.com/jp-um/university_of_malta_LaTeX_dissertation_template
+%%
+%% In case of any difficulties please contact Prof. JP Ebejer on jean.p.ebejer@um.edu.mt
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% Before you embark on this quest you should probably read some of:
+%% Deadly sins - http://mirrors.ctan.org/info/l2tabu/english/l2tabuen.pdf
+%% Writing a thesis in LaTeX - http://tug.org/pracjourn/2008-1/mori/mori.pdf
+
+\RequirePackage[l2tabu, orthodox]{nag} % tells you of any bad LaTeX usage
+                                       % must be first thing in class (with the exception of comments)
+\RequirePackage{placeins}		       % To use \FloatBarrier
+
+%% There is one option you should define; oneside or twoside.
+%% By default all electronic submissions should be `oneside`
+%% Use twoside for printing (e.g. the supervisor's customary copy)
+%% Note that margins will change accordingly and automatically
+\documentclass[oneside]{nus}  % custom National University of Singapore project/dissertation/thesis 
+\usepackage[a4paper,margin=1in,heightrounded]{geometry} %control margins explicitly
+% \usepackage[showframe]{geometry} %for debugging; draws boxes so you can see whether inner/outer margins differ
+%% \counterwithout{footnote}{chapter} % use this to have continuous numbering for your footnotes (that do not reset per chapter)
+
+%% **************** (Your) Packages (Start) ******************
+
+% \listfiles % uncomment this to know which packages you are using
+              % the list of packages will be in the bottom of the .log file
+
+%% Note that packges may already be loaded from the nus (and memoir) classes.
+%% Do not add your packages to the template, but rather add them here.
+
+\usepackage{blindtext} %% for some dummy text, remove in your writeup
+\usepackage{coffee4}    %% for some fun
+% ---------- Listings + Code fonts ----------
+\usepackage[T1]{fontenc}
+\usepackage[scaled]{inconsolata}   % nicer monospace
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{tikz} %to draw figures
+\usetikzlibrary{arrows.meta,positioning,fit,shadows.blur,calc}
+\usepackage{adjustbox}
+\usepackage{caption}
+\usepackage[most]{tcolorbox}
+
+% Listings style (no frame breaks, safe line breaks)
+\lstdefinestyle{finsight}{
+  basicstyle=\ttfamily\small,
+  numbers=left,
+  numbersep=8pt,
+  stepnumber=1,
+  frame=single,
+  framerule=0.4pt,
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=2,
+  showstringspaces=false,
+  captionpos=b,
+  keepspaces=true
+}
+\lstset{style=finsight}
+
+% after \usepackage[backend=biber,style=authoryear]{biblatex}
+\renewcommand*{\mkbibparens}[1]{\mkbibbrackets{#1}} %render square brackets instead of circlular for \parencite
+
+%% ***************** (Your) Packages (End) *******************
+
+
+%% **************** (Your) Data (Start) ******************
+
+\title{FinSight:\\Intelligent Stock Prediction\\and Advisory Platform}  % use \\ here otherwise you get a justified title
+                                     % note capitalization of the title (only common 
+                                     % words in lower case)
+\tagline{augmenting the lives of finance professionals}      % tag line *OPTIONAL* 
+\author{\vspace{5 pt}Huo Yiming (A0328696J) \\ \vspace{5 pt}Li Jiajun (A0326795M) \\ \vspace{5 pt}Samarth Soni (A0329960U) \\ \vspace{5 pt}Su Yuxuan (A0329926N) \\ \vspace{5 pt}Wang Yixi (A0328469M)}            % your full name
+\authorID{123456M}                   % your University Identifier
+\supervisor{Mr.\ Hunarpreet Singh}           % your supervisor(s) name
+\cosupervisor{Prof Dr Gary Leung}                % your cosupervisor(s) name - no . in Dr *OPTIONAL* 
+                                     % simply comment out the above line if absent
+\department{Intelligent Reasoning Systems Graduate Certificate}   % your department (e.g. Artificial Intelligence)
+\faculty{Institute of Systems Science}       % your faculty (e.g. ICT)
+\degreeName{M.Tech.\ Artificial Intelligence Systems}       % the degree you are reading
+                                     % note the \ after the dot, so not to consider it a fullstop
+\doctype{dissertation}               % the type of document (fyp, dissertation, thesis)
+%%\subjectcode{ICS5200}              % the study unit-code (currently not used)
+\submissionDate{\DTMenglishmonthname{\the\month}, \the\year}     % The actual (corrected, post-viva) submission month, inc. year, should probably be fixed.
+
+%% ***************** (Your) Data (End) *******************
+
+%%
+\renewcommand{\chapterheadstart}{\vspace*{\beforechapskip}}
+\setlength\beforechapskip{0mm}
+
+
+%% ******** (Your) Document Settings (Start) *************
+
+% You should have an images directory in every chapX subdir
+% NOTE:  Trailing / for subdirs is required.
+\graphicspath{{./images/}{./chap1/images/}{./chap2/images/}}   % Paths where to look for images, if defined "images" must always be there as it holds the images in-use by the template.
+
+\makeindex
+
+\addbibresource{chap1/introduction_biblio.bib}
+\addbibresource{chap2/background_and_lit_overview_biblio.bib}
+\addbibresource{chap3/materials_and_methods_biblio.bib}
+\usepackage{lmodern} %latin modern
+\usepackage{graphicx}
+\usepackage{float}       % for [H] exact placement
+\usepackage{booktabs}    % nicer tables
+\usepackage{tabularx}    % auto-width tables
+\usepackage{caption}
+\usepackage{pdfpages}
+
+\captionsetup{font=small,labelfont=bf}
+\renewcommand{\arraystretch}{1.15}
+%% ********* (Your) Document Settings (End) **************
+
+% DOCTOR'S (JP) ORDERS: MAKE SURE TO READ MY TWO BLOG ENTRIES WITH
+% CONTENT AND LaTeX TIPS FOR YOUR WRITE-UP.  THESE ARE BASED ON  
+% EXAMINER'S FEEDBACK
+%
+% URLS:
+% https://bitsilla.com/blog/2019/03/content-tips-for-your-dissertation-or-project-write-up/
+% https://bitsilla.com/blog/2019/01/latex-tips-for-your-dissertation-or-project-write-up/
+
+% end the preamble and start the document
+
+\begin{document}
+\frontmatter 
+	\maketitle
+	\input{frontmatter/copyright}       
+	%% The originality statement is *NOT* part of the dissertation but submitted separately.
+	%\input{frontmatter/dedication}        % include a dedication.tex file
+	\input{frontmatter/acknowledgements}   % include an acknowledgements.tex file
+	\input{frontmatter/abstract}\if@openright\cleardoublepage\else\clearpage\fi
+	\tableofcontents*\if@openright\cleardoublepage\else\clearpage\fi
+	\listoffigures*\if@openright\cleardoublepage\else\clearpage\fi
+	\listoftables*\if@openright\cleardoublepage\else\clearpage\fi
+	\input{frontmatter/abbreviations}\if@openright\cleardoublepage\else\clearpage\fi
+
+%% Note: always use \input as you cannot nest \includes (amongst other things)
+\pagestyle{nuspage}
+\floatpagestyle{nuspage}
+
+\mainmatter 
+	%%	\part{Your First Part} %% PhDs may require this parts idea as well.
+	\input{chap1/introduction_main} 
+	\input{chap2/Market Research}
+	\input{chap3/Data Collection and Preparation}
+	\input{chap4/System Design}
+	%%	\part{Your Second Part}
+    \input{chap5/Implementation}
+	\input{chap6/Result and Progress}
+    %\input{chap7/Challenges}
+	\input{chap8/conclusion_main}
+    %\input{chap_eg/eg}
+
+\appendix
+	\input{appA/appendix_a_main}     % these are just test names as I didn't know what you'd want
+	\input{appB/appendix_b_main}    
+	\input{appC/appendix_c_main}
+		
+\pagestyle{nuspageback}
+
+% {\backmatter
+% 	% Bibliography
+% 	\if@openright\cleardoublepage\else\clearpage\fi
+% 	% Use something like https://flamingtempura.github.io/bibtex-tidy/ to clean all your bibtex entries
+% 	\printbibliography[title=References]
+% 	\printindex
+% }
+	
+\end{document}
+
+%%% The End %%%

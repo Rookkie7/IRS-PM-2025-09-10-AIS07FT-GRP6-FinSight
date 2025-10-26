@@ -1,0 +1,1259 @@
+=============================================================================================================
+=========                                                                                               =========
+=========                                    DECLARATION AND PROMPTS                                    =========
+=========                                                                                               =========
+=============================================================================================================
+
+
+We used OpenAI’s GPT-5 Thinking (ChatGPT) to support this project by helping us refine problem framing and messaging; draft and edit report sections (abstract, background, industry trends, competitive landscape, aims/objectives, project scope); suggest LaTeX/TikZ formatting and figures; generate BibLaTeX keys and citation formats; and prototype engineering artefacts (PBS job templates, HPC environment setup guidance, RAG API scaffolding, and server/tunneling runbooks). We reviewed, edited, tested, and validated all outputs; all code executed on our NUS HPC environment was checked by us. Any external sources are cited in the bibliography. No partner-confidential data was provided to the AI tool. We are fully responsible for the content, accuracy, and quality of the submitted work.
+
+We also used GPT-5 to assist  with developing, analysing, and refining Python code and machine learning workflows; explaining programming, data science, and HPC concepts; generating and optimising model visualisations; and improving the clarity, structure, and presentation of our written notes and reports. We are responsible for the content, interpretation, and quality of the submitted work.
+
+For our LaTeX dissertation, we used Overleaf's AI tools to help with formatting, structuring, and refining the document.
+Also, we used Claude (Anthropic's Claude Sonnet 4.5) to convert references from JSON to BibTeX format and to iteratively develop and debug a complex TikZ/LaTeX system architecture diagram, including troubleshooting node placement, arrow routing, label positioning, and layout optimization. We are responsible for all conceptual content, system design decisions, and the accuracy and quality of the submitted work.
+
+We used Perplexity AI to generate ideas, solve technical problems, format and refine content, and ensure the accuracy of our project; we have reviewed and remain responsible for all submitted work.
+
+We used GitHub copilot to add comments and docstrings to our code. We are responsible for the content, interpretation, and quality of the submitted work.
+
+Team Responsibilities:
+All text was reviewed and edited by us; all commands and code were executed and validated by us on the NUS HPC environment; all external sources are cited. No partner-confidential data was entered into the AI tool. We accept full responsibility for the final content, correctness, and quality of the submission.
+
+Signatures/Date:
+Team member: Samarth Soni
+Date:  26-Oct-2025
+
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+
+ai fin analyst raw prompts if requierd later
+
+after our meeting with arthalpha, i made some minutes. restructure it so i can share it on the common group with my team and hunar
+* Li gives summary of what he read + what Yixi gave him
+* each pick up a stat based approach - copula/distance based/time based
+* call -what approach we used, what results we got
+* quant research - start with basic, get a hold on the basic stat model, improve upon those, or atleast form a baseline — distance based worst perofmring, XYZ stat based is improving upon distance based
+* once you have that idea, second stage:
+    * distribute various ML models
+    * or approaches, like selection, trading algorithm, spread design
+* pick one stat approach each, implement end to end
+* prepare proepr documentation for it alongwith backtest results
+* this will show us the way QR approach these problems
+* find papers by yourself
+* 11 days - give 4 days to stat based approaches, 7 days to ML based approaches. Roughly
+    * can refine it as per requirements
+* document alognside the implementation
+* missing data: do forward fill, use last day’s price and fill the next
+* volumes - when there is a nan, fill it with 0 instead of forward filling.
+* think of better ways of handling nan data.
+* we will either use PX_LAST or the VWAP price — forward fill works in both cases.  Dont focus on OPEN/high/low
+* if we just work with LAST or VWAP it should be fine
+* for ML based, just implement the paper. WE can see if we can improve on the paper somehow if time permits
+    * Paper - use as a reference, implement
+    * use its data, finally compare results like baseline, paper method, some DL method to see if we have some improvement or difference
+    * experience - v v hard to implement paper and get results that paper mentions
+    * if a strategy would be working why would nayone publish it
+        * either v hard to replicate
+        * or paper is just rubbish
+        * so do a lot of hard work to try and de layer the paper and replicate it
+    * if stat approach work better than ML, no use of ML — hence implementing baselines is very important
+* think - how to compare different approaches - implement some sort of metrics, should be common amongst different approaches - every portfolio should have sharpe ratio, volatility, ___, — he will send accross list of metrics
+* each approach result should have these few metrics for every metric. Find a common codebase around that so you can use the same set of metrics for every research that you
+* how to parallelize? you need to experimentand find out
+    * need to pair LSTM with another pair of stock to be able to pair later - will have to think about it, no clear cut answer
+* only pick up stock frmo universe as of that date - if that stock is not in your universe on particular date, do NOT pick it up
+* avoid lookahead bias when backtesting — dont look at data you are not supposed to look at when making predictions. Like cannot use today’s close to generate result for today
+    * even more complicated for LSTM
+    * predict using one model for oen month, then retrain for that month using training data
+    * just train on whole data then backtest it. Keep test set separate frmo train set
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+arthalpha has given me two pieces of data - bse200.csv and price.csv. I need to get an understanding of this dataset within the next 10 minutes since the call with them starts in 15 minutes
+description he shared:
+1. price data : daily open, low, high, close, VWAP, and volume
+2. universe : Our universe is BSE200. So you will find the composition of the universe at any given day
+
+now the bse200 i could open since it is 12 mb -- i think it has date YYYYMMDD in first row and then 200 rows of company codes. But the price is 500 mb and i couldnt open it, need to quickly process it and understand via ipynb
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+what is Statistical arbitrage | factor investing | mean-reverting portfolios | pairs trading
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+teach me how to build an LLM which can act as a AI Financial analyst and can deeply analyse and provide in depth strategic report for a particular stock or industry which it specialises in (we will choose that). Outline all the vairous inputs it will require like news, company annual/quarterly reports, current market trends, and many more and also how will we enable it to scrape and use real time data off the publicly available internet. It should act as a FA and provide as good as or even better financial opinons with in depth analysis, defense, and proof on the given stock/industry.
+
+I need to wrap this up in 2 weeks. But i'll have those 2 weeks full time. Can we shorten the implementation plan to reflect that?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+is "Combined Investment Recommendation Module" a good name to give to this AI Financial Analyst I am building? I need to submit proposal to my college for this, so please share a moderately detailed writeup having sections: data collection strategy, System design, implementation details, expected results, expected challenges. You can make use of the initial analysis you shared above but dont make it too technical, i want to ensure i am not over promising. Make it tailored to the Indian market/NSE/SEBI etc since I would be collaborating with an India based firm for this.
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+okay now we are submitting a proposal for the pattern recognition module's pairs trading part of our finsight application
+We will be implementing a few stats based approaches for baseline and then more ML based approaches. Additionally as part of the larger 'FinSight' application we will be implementing news tagging and sentiment extraction too, which prof said we can show as part of the pattern recognition systems half of it. SO now, how can we structure the proposal and how can we name it?
+we came up with a  few names:
+Enhancing Pairs Trading Strategies with Machine Learning Models
+FinSight: Identifying patterns of market inefficiencies
+Finsight: Identify patterns in Pairs Trading
+
+what can be a better more attractive creative name for this?
+
+As for the structure, currently we have come up with:
+background
+Aims
+Objectives
+project description
+>data collection and preparation
+>intro to statistical approaches (covers Distance based, Cointegration, PCA, Stochastic Control, Copula, Copula variation)
+>machine learning approaches (covers DBSCAN, OPTICS, LSTM)
+>experiment design for all of the above
+>expected result and progress
+>evaluation metrics
+
+is this structure fine? Can we improve something to show more novelty? where can i add the fact that this is a part of a larger application finsight, where first we do this as a research project and later once our experiment bears results we can call and finally deploy the service to access it through the API , it can be deployed as a separate model
+
+I will share the contents of the contents with you for each section next, so we can go through them and improve one by one but first lets answer these
+
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+can you please come up with how i can present this in my proposal's implementation plan sectoin?
+
+What can be a short conclusion line which would indicate Which topic/concept from our "Intelligent Reasoning Systems" course is being used in this implementation
+
+I think we can increase the conclusion by a little bit too (first part of your answer). Additionally, this is the aim/objective section of my proposal.
+...
+
+okay now coming to the method introductions. These are how we have written them:
+2.1.1 PCA approach for pairs trading
+
+PCA approach extends the classic two-asset pairs trading to a multi-asset framework, allowing for the identification of mean-reverting portfolios within a broader universe of assets. This research will implement a Principal Component Analysis (PCA) approach to construct mean-reverting portfolios for statistical arbitrage.
+The process begins with a universe of N assets. Their standardized historical returns are used to compute an empirical correlation matrix. Applying PCA to this matrix extracts principal components, which represent systematic risk factors. The eigenvectors corresponding to the smallest eigenvalues form "eigen portfolios" that are largely immune to these market-wide factors, making their returns driven by idiosyncratic, mean-reverting components.
+The residuals of these eigen portfolios are modeled as an Ornstein-Uhlenbeck process:
+dX_t = κ(μ - X_t)dt + σdW_t
+We filter for portfolios with a high speed of mean reversion (κ). For these, we calculate the S-score,
+S = (X_t - μ) / σ_eq
+ which measures the distance from equilibrium in standard deviations.
+Trading signals are generated using predefined S-score thresholds:
+Long Entry: S < -S_buy, Exit: S > -S_exit
+Short Entry: S > S_sell, Exit: S < S_exit
+A trade involves taking an offsetting position in the asset eigen portfolio and the systematic factors, ensuring a market-neutral strategy.
+2.1.2 Copula approach for pairs trading
+In the field of pairs trading, Copula functions provide a flexible way to model the dependence structure between two assets, beyond traditional correlation or cointegration methods. Unlike simple linear correlation, Copulas can capture nonlinear dependencies and tail dependence, which are critical during market stress when asset prices often move together.
+By separating the modeling of marginal distributions from their joint dependence, Copula-based methods allow traders to:
+Select pairs with strong and stable dependence.
+Generate trading signals based on deviations in joint probability rather than only price spreads.
+Manage risk by incorporating extreme co-movements (tail risk) into strategy design.
+2.1.3 Stochastic Control Approach
+The stochastic control approach frames pairs trading as a dynamic portfolio optimization problem under a stochastic model of the spread. Specifically, the log-price difference (spread) between two assets is modeled as an Ornstein–Uhlenbeck (OU) mean-reverting process. The trading strategy is then derived from solving a Hamilton–Jacobi–Bellman (HJB) equation with a power utility objective on terminal wealth.
+This leads to a closed-form optimal trading rule, where portfolio weights depend on the current spread, reversion speed, volatility, and correlation parameters. Importantly, parameter values (k,θ,η,μ,σ,ρ)(k, θ, η, μ, σ, ρ)(k,θ,η,μ,σ,ρ) can be estimated via maximum likelihood estimation (MLE) in closed form, making the approach practical for real implementation.
+Compared to PCA or Copula, this method emphasizes analytical tractability and optimality under clearly defined utility preferences, offering a mathematically rigorous framework for pairs trading.
+2.1.4 Co-integration Approach
+In this research, we will use Co-integration as another statistical approach.The core idea of co-integration approach is:If two stocks share a common long-run stochastic trend while a log-price linear combination is mean-reverting, the residual can be exploited for statistical arbitrage.
+We detect mean-reverting relationships via Engle–Granger (EG) on log prices:
+logPA =+logPB+ t. Pairs pass if the residual is stationary (ADF p<0.01) and fast enough (half-life 5-35 days). From the spread st=  logPA -+logPB  we trade its z-score, standardized by a rolling 60-day mean/vol in the trading window (formation stats only backstop when early samples are short). To avoid overlap risk we apply non-overlapping maximum matching, selecting Top-N=40 pairs per window (ranked by shorter half-life and lower ADF p). Execution is market-neutral with log-beta share sizing (signal-consistent) and mild 1/σ risk scaling (clipped 0.5–2×).
+
+and these are how hudsonthames describes them:
+DISTANCE APPROACH
+
+Popularized by Gatev in 2006, this approach holds the position of the most cited pairs trading strategy. The simplicity and transparency of this method make it the first choice when it comes to large empirical research.Main idea:During the pair selection process, various distance metrics like pearson’s correlation, distance correlation, angular distance, and so on, are leveraged to identify the co-moving securities. In the trading period, simple nonparametric threshold rules are used to trigger the trading signals.
+
+COINTEGRATION APPROACH
+
+Another extremely popular approach outlined by Vidyamurthy 2004, is the cointegration approach. Pairs selected in this method possess econometrically more reliable equilibrium relationships.Main idea:The pairs selection process is conducted by applying a cointegration tests to identify co-moving assets. Trading signals are generated by using simple rules, mostly generated by (Gatev et al 2006) threshold rules.
+
+TIME SERIES APPROACH
+
+To improve the trading rules of a given strategy, we turn to time series modeling of a mean-reverting process, other than cointegration.Main idea:During the pairs selection step our goal is to create a truly mean-reverting portfolio/spread. The mean-reverting process of choice is fitted to the spread, in order to determine the optimal rules for the trading strategy. One of the most popular mean-reverting processes used in the literature is the Ornstein-Uhlenbeck process.
+
+STOCHASTIC CONTROL APPROACH
+
+By using stochastic processes we can determine the optimal trading rules for a given mean-reverting strategy, without the need to forecast how the spread will move in the next period or needing a formation period.Main idea:This is an advanced pairs trading strategy that relies on using stochastic processes to generate the optimal trading rules and policies for mean reverting portfolios.
+
+COPULA
+The Copula approach allows you to study the deeper relationship between the different legs of the trade and enables you to analyze the dependency structure from multiple random variables. This novel approach also allows you to work with multiple assets rather than only working with a single pair (2 assets). The trading rules selection process usually relies on the concept of conditional probability. The data fitting process for copulas is usually divided into two parts: translating marginal data into quantiles and fitting a copula with the following quantiles.
+
+
+PCA
+The approach proposed by Avellaneda and Lee (2010) uses PCA to create a seemingly mean-reverted spread which in turn is modeled by an OU-process. The trading rules are generated similarly to the time series approach, and the main focus is on the type of principal component analysis method utilized – asymptotic, regular, or a multivariate cointegration model. This model, at the time of writing, is considered by many to be the cutting edge of mean reversion trading.
+
+So you can use these part as you may and help me make what we have already written, better, but also help me add two new sections, one for time series and one for distance based.
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+okay now coming to the method introductions. These are how we have written them:
+2.1.1 PCA approach for pairs trading
+
+PCA approach extends the classic two-asset pairs trading to a multi-asset framework, allowing for the identification of mean-reverting portfolios within a broader universe of assets. This research will implement a Principal Component Analysis (PCA) approach to construct mean-reverting portfolios for statistical arbitrage.
+The process begins with a universe of N assets. Their standardized historical returns are used to compute an empirical correlation matrix. Applying PCA to this matrix extracts principal components, which represent systematic risk factors. The eigenvectors corresponding to the smallest eigenvalues form "eigen portfolios" that are largely immune to these market-wide factors, making their returns driven by idiosyncratic, mean-reverting components.
+The residuals of these eigen portfolios are modeled as an Ornstein-Uhlenbeck process:
+dX_t = κ(μ - X_t)dt + σdW_t
+We filter for portfolios with a high speed of mean reversion (κ). For these, we calculate the S-score,
+S = (X_t - μ) / σ_eq
+ which measures the distance from equilibrium in standard deviations.
+Trading signals are generated using predefined S-score thresholds:
+Long Entry: S < -S_buy, Exit: S > -S_exit
+Short Entry: S > S_sell, Exit: S < S_exit
+A trade involves taking an offsetting position in the asset eigen portfolio and the systematic factors, ensuring a market-neutral strategy.
+2.1.2 Copula approach for pairs trading
+In the field of pairs trading, Copula functions provide a flexible way to model the dependence structure between two assets, beyond traditional correlation or cointegration methods. Unlike simple linear correlation, Copulas can capture nonlinear dependencies and tail dependence, which are critical during market stress when asset prices often move together.
+By separating the modeling of marginal distributions from their joint dependence, Copula-based methods allow traders to:
+Select pairs with strong and stable dependence.
+Generate trading signals based on deviations in joint probability rather than only price spreads.
+Manage risk by incorporating extreme co-movements (tail risk) into strategy design.
+2.1.3 Stochastic Control Approach
+The stochastic control approach frames pairs trading as a dynamic portfolio optimization problem under a stochastic model of the spread. Specifically, the log-price difference (spread) between two assets is modeled as an Ornstein–Uhlenbeck (OU) mean-reverting process. The trading strategy is then derived from solving a Hamilton–Jacobi–Bellman (HJB) equation with a power utility objective on terminal wealth.
+This leads to a closed-form optimal trading rule, where portfolio weights depend on the current spread, reversion speed, volatility, and correlation parameters. Importantly, parameter values (k,θ,η,μ,σ,ρ)(k, θ, η, μ, σ, ρ)(k,θ,η,μ,σ,ρ) can be estimated via maximum likelihood estimation (MLE) in closed form, making the approach practical for real implementation.
+Compared to PCA or Copula, this method emphasizes analytical tractability and optimality under clearly defined utility preferences, offering a mathematically rigorous framework for pairs trading.
+2.1.4 Co-integration Approach
+In this research, we will use Co-integration as another statistical approach.The core idea of co-integration approach is:If two stocks share a common long-run stochastic trend while a log-price linear combination is mean-reverting, the residual can be exploited for statistical arbitrage.
+We detect mean-reverting relationships via Engle–Granger (EG) on log prices:
+logPA =+logPB+ t. Pairs pass if the residual is stationary (ADF p<0.01) and fast enough (half-life 5-35 days). From the spread st=  logPA -+logPB  we trade its z-score, standardized by a rolling 60-day mean/vol in the trading window (formation stats only backstop when early samples are short). To avoid overlap risk we apply non-overlapping maximum matching, selecting Top-N=40 pairs per window (ranked by shorter half-life and lower ADF p). Execution is market-neutral with log-beta share sizing (signal-consistent) and mild 1/σ risk scaling (clipped 0.5–2×).
+
+and these are how hudsonthames describes them:
+DISTANCE APPROACH
+
+Popularized by Gatev in 2006, this approach holds the position of the most cited pairs trading strategy. The simplicity and transparency of this method make it the first choice when it comes to large empirical research.Main idea:During the pair selection process, various distance metrics like pearson’s correlation, distance correlation, angular distance, and so on, are leveraged to identify the co-moving securities. In the trading period, simple nonparametric threshold rules are used to trigger the trading signals.
+
+COINTEGRATION APPROACH
+
+Another extremely popular approach outlined by Vidyamurthy 2004, is the cointegration approach. Pairs selected in this method possess econometrically more reliable equilibrium relationships.Main idea:The pairs selection process is conducted by applying a cointegration tests to identify co-moving assets. Trading signals are generated by using simple rules, mostly generated by (Gatev et al 2006) threshold rules.
+
+TIME SERIES APPROACH
+
+To improve the trading rules of a given strategy, we turn to time series modeling of a mean-reverting process, other than cointegration.Main idea:During the pairs selection step our goal is to create a truly mean-reverting portfolio/spread. The mean-reverting process of choice is fitted to the spread, in order to determine the optimal rules for the trading strategy. One of the most popular mean-reverting processes used in the literature is the Ornstein-Uhlenbeck process.
+
+STOCHASTIC CONTROL APPROACH
+
+By using stochastic processes we can determine the optimal trading rules for a given mean-reverting strategy, without the need to forecast how the spread will move in the next period or needing a formation period.Main idea:This is an advanced pairs trading strategy that relies on using stochastic processes to generate the optimal trading rules and policies for mean reverting portfolios.
+
+COPULA
+The Copula approach allows you to study the deeper relationship between the different legs of the trade and enables you to analyze the dependency structure from multiple random variables. This novel approach also allows you to work with multiple assets rather than only working with a single pair (2 assets). The trading rules selection process usually relies on the concept of conditional probability. The data fitting process for copulas is usually divided into two parts: translating marginal data into quantiles and fitting a copula with the following quantiles.
+
+
+PCA
+The approach proposed by Avellaneda and Lee (2010) uses PCA to create a seemingly mean-reverted spread which in turn is modeled by an OU-process. The trading rules are generated similarly to the time series approach, and the main focus is on the type of principal component analysis method utilized – asymptotic, regular, or a multivariate cointegration model. This model, at the time of writing, is considered by many to be the cutting edge of mean reversion trading.
+
+So you can use these part as you may and help me make what we have already written, better, but also help me add two new sections, one for time series and one for distance based.
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+Now, give me content to put in experiment design section for distance/time series based
+
+these are what we have written for the rest 4 in this section:
+3.1.2 Co-integration approach
+Universe is BSE200 (daily, 2003–2025). Price uses VWAP first, fallback to last; we keep valid days (weekdays with ≥90% cross-sectional completeness). Windows roll 252d formation → 126d trading → 126d step (~40 windows). In each formation window we quality-filter (coverage ≥95%, volume ≥ P10), pre-filter by correlation Top-K≈4000, then EG+ADF on ≤6000 candidates; accept ADF p<0.01, HL 5–35, then select Top-N=40 non-overlapping pairs. Signals are threshold crossings: open when |z| jumps above 3.25, close at 0.25, stop at 3.75; max hold 12 days; cooldown 12 days; K=10 concurrent pairs with equal capital.
+We add a market risk gate: if yesterday’s cross-sectional median |return| exceeds its 252-day 90th percentile, new entries are paused (exits allowed). Execution is t−1 signal → t open (fallback to close). We report overall/annual CAGR, Ann.Vol, Sharpe, MaxDD, Turnover and export daily portfolio and trade logs. Baselines/ablations: constant (formation) z vs rolling z; price-beta vs log-beta sizing; with/without market gate or 1/σ scaling; sensitivity over z_{\text{open}}, K, Top-N, HL band, ADF cut.
+3.1.4 Stochastic Control Approach
+For the stochastic control approach, we can design the experiment as follows:
+Spread Modeling: Model the log-price spread between each candidate pair as an Ornstein–Uhlenbeck (OU) process.
+
+
+Parameter Estimation: Estimate OU parameters (k,θ,η)(k, θ, η)(k,θ,η) and asset parameters (μ,σ,ρ)(μ, σ, ρ)(μ,σ,ρ) using maximum likelihood estimators derived in closed form.
+
+
+Optimal Strategy Computation: Use the closed-form solution to the HJB equation to compute daily optimal portfolio weights h∗(t,x)h^*(t, x)h∗(t,x).
+
+
+Backtest Framework: (1) Roll forward with a 249-day estimation window for parameters. (2) Compute daily optimal positions and simulate portfolio wealth dynamics. (3) Compare against PCA and Copula approaches with identical backtesting settings.
+
+
+This setup allows us to evaluate whether mathematically optimal control-based strategies yield superior performance versus heuristic statistical approaches
+
+3.1.5 PCA approach
+In this research , we will use the PCA approach provided by arbitragelab.
+Parameter Calibration: Key parameters will be set as follows, with robustness checks performed by varying these values:
+Correlation Matrix Estimation Window (M): 249 trading days (approximately one year).
+Residual Estimation Window: 60 days for calibrating the OU process parameters (κ, μ, σ).
+Mean-Reversion Threshold: A minimum κ will be enforced such that the portfolio's theoretical reversion time is less than a set period (e.g., 60 days).
+Trading Thresholds (S_buy, S_sell, S_exit): Initial thresholds will be set based on the literature (e.g., S_buy = S_sell = 1.25, S_exit = 0.5) and subsequently optimized on a training set.
+
+Backtest Engine: A custom backtest engine will be developed to simulate the strategy. It will:
+Roll the estimation windows forward on a daily basis.
+Recalculate the correlation matrix, perform PCA, and identify tradable eigen portfolios.
+Compute the S-score for each tradable portfolio daily.
+Generate and execute trading signals according to the rules above.
+Construct the overall portfolio by aggregating positions from all active eigen portfolios.
+
+3.1.6 Copula Approach
+In this research, we will use Copula as another statistical approach.The core workflow of applying Copula in pairs trading is: transform asset returns into uniform variables via probability integral transform (PIT), select an appropriate Copula family, estimate parameters on a rolling window, check model fit, generate trading signals based on conditional distributions or joint-tail probabilities, and finally execute hedged trades with backtesting and risk evaluation.
+
+since i dont have much time left i need you to also tell me what you are changing and which lines you want me to replace with yours. I dont have enough bandwidth to compare the two and make a 3rd superposition like i would have liked to...
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+now lastly give me expected result and progress for distance/time series based. This is what we've come up with  for the other 4:
+4.1.2 Co-integration Approach
+With rolling z, HL screening, non-overlap selection, log-beta sizing, and the market gate, we target gross Sharpe ~0.25–0.40 with cumulative Turnover <~200; with 5 bps per-side costs we expect slightly positive net returns, and 10 bps near break-even (regime dependent; 2008/2020 likely soften via the gate and higher thresholds). Timeline: W1 data QC + zero-cost gross; W2 add gate/crossing/log-beta and produce 0/5/10 bps; W3 baselines/ablations + sensitivity to finalize ranges; W4 side-by-side with PCA approach and package scripts/tables/plots with deployment-ready parameter guidance.
+4.1.4 Stochastic Control Approach
+Optimal Exploitation of Mean Reversion: Since the trading weights are derived directly from the OU dynamics, the strategy should effectively capture mean-reverting opportunities.
+Closed-Form Practicality: With closed-form formulas for both optimal controls and parameter estimation, implementation should be computationally efficient.
+Robust Risk-Adjusted Performance: Anticipated to yield competitive Sharpe ratios and controlled drawdowns, especially when spread processes exhibit strong reversion.
+Benchmark for Comparison: Provides a rigorous mathematical baseline against which PCA, Copula, and ML-based strategies can be compared.
+4.1.5 PCA approach
+Profitable Market-Neutral Strategy: We expect the PCA-based strategy to generate positive risk-adjusted returns (Sharpe Ratio) with low correlation to broad market indices, confirming its market-neutral characteristic.
+Effective Signal Identification: The model should successfully identify non-redundant, mean-reverting eigen portfolios. The S-score is anticipated to be a reliable signal, with extreme values (e.g., |S| > 1.25) triggering most profitable trades.
+4.1.6 Copula approach
+We expected that the Copula-based approach captures nonlinear and tail dependencies between assets. By transforming returns with probability integral transform and fitting Copula families, we can generate probability-driven trading signals. This provides a robust alternative framework for evaluating and enhancing pairs trading strategies.
+
+
+4.1.6 Copula approach
+We expected that the Copula-based approach captures nonlinear and tail dependencies between assets. By transforming returns with probability integral transform and fitting Copula families, we can generate probability-driven trading signals. This provides a robust alternative framework for evaluating and enhancing pairs trading strategies.
+
+this seems too small can yo expand it? Pls give the overview
+
+whatever we've left unchanged in the previous 2 sections is that okay?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+how do we say about Integration with FinSight in the project description.
+That way it’s clear this is part of a bigger vision, not just a standalone experiment.
+quickly give me the 5th section to put in here
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+as part of my project proposal presentation our team, i am showing the metrics gotten uptil now. I will give introduction to each metric, aafter that need to explain these results, so how can i explain and defend these results ?
+how to explain negative maximum drawdown?
+how to explain highest turnover and sharpe of cointegration but lower CAGR as compared to copula/pca which have highest and similar CAGR?
+why sharpe of copula is lower than pca?
+why volatility is lowest in pca but similar in other 3?
+any interesting talking point about stochastic?
+
+The distance-based approach (Gatev et al, 2006) is the most widely cited baseline for pairs trading. It identifies pairs of securities that move closely together using distance metrics such as Pearson correlation, distance correlation, or angular distance. Once pairs are selected, simple non-parametric threshold rules are applied to the price spread. If the spread diverges beyond a set threshold, a trade is initiated (long the underperforming stock, short the outperforming stock), with positions closed once the spread converges.
+
+How can i explain my approach like how am i selecting pairs and how am i doing the trade?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+what is a good name for my repo?
+FinSight-quant
+finsight-pairs-trading
+or any other recommendations?
+
+yes. Also add a sectino explaining git best practises, like how to clone the repo, and what is the preferred branching strategy to be used. I think, main (serve as master) + develop (serve to integrate everyone's changes) + all devs branch out frmo develop. COmmit message like: "Module | Component | Description" with examples like module could be statistical method, ML method; component could be distance approach, PCA approach, DBSCAN, etc. You can suggest changes in what i just said or improvement
+
+give code to write under **Squash** to group small related edits under one commit:
+
+are these fine?
+# To find all commits since the last time you pushed to remote
+git log --oneline..origin/feature/your-branch-name
+
+# To find all commits since branching out of develop
+git log --oneline..origin/develop
+
+#If you get an error because some of the squashed commits were already pushed to remote
+git push origin feature/your-branch-name --force
+
+What is force-with-lease anyways?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+yes give me the checlist. It needs to have a section on **Pull or Rebase** i.e. before the PR is made from feature into develop, they need to fetch develop and rebase feature on top of it
+
+instead of git pull origin develop why dont we do git rebase origin develop ? I've experienced that sometimes, pull tries to create a merge commit when pulling, not sure why. But yeah, rebase is a bit risky, if a inexperienced dev has local changes on develop they may lose them
+
+when in a notebook or code, we'd want them to eb able to access the contents of data. so would i need to do ../data/filename or is there a way to give filename frmo project root directory so all places use the same format: ~/data/filename ?
+
+i defined the config.py in directory root but now in a notebook when i try to import it, i get ModuleNotFoundError                       Traceback (most recent call last)
+Cell In[1], line 1
+----> 1 from config import DATA_DIR
+      3 df = pd.read_csv(DATA_DIR / "price.csv")
+
+ModuleNotFoundError: No module named 'config'
+
+
+what is Path(__file__).resolve().parents[1] doing? that seems hardcoded as well. If the file was deeper nested, parents[2] needs to be used or something?
+
+but then how do people define and use configs? surely in the future more hardcoded global variables might be required -- how can i make importing config frmo anywhere in the codebase simple and straightforward using find_config or something ?
+
+should i move notebooks folder into src? Either way even if not, same problem with utils: it is on the same level as ml/statistical/etc in src folder so the files wont be able to read it, or would they?
+
+even after adding __init__.py to the project, why is from FinSight_QuantLab.config import DATA_DIR not working for me in the notebooks folder
+
+wdym by no broken commits in the main branches? yes, give me a short rebase conflict resolution tutorial to add
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+okay i think the issue is my project name is FinSight-QuantLab -- is that why its children cant access it? I  made an __init__.py and config.py, then in a notebook inside notebooks folder i expect to be able to import config
+
+i dont wanna rename my project. i am just going to use the earlier sys.path.append method you shared - simplest, just tweak the number of parents for every file, not too difficult to maintain.
+
+Coming to the data, you may remember we did
+chunksize = 10**6 #READ 10^6 ROWS AT ONCE
+reader = pd.read_csv(DATA_DIR / "price.csv", chunksize=chunksize)
+
+# Process just first chunk
+df_chunk = next(reader)
+print(df_chunk)
+# Unique tickers
+tickers = df_chunk['security'].unique()
+print("Sample tickers:", tickers[:10])
+
+# Date range
+print("From:", df_chunk['date'].min(), "to:", df_chunk['date'].max())
+
+# Missing values check
+print(df_chunk.isna().sum())
+
+Here we got the following missing values:
+Unnamed: 0                  0
+date                        0
+security                    0
+PX_OPEN                  4330
+PX_HIGH                  4309
+PX_LOW                   4335
+PX_LAST                   740
+EQY_WEIGHTED_AVG_PX    546904
+PX_VOLUME               71672
+
+What does an "unnamed:0" column signify? has it been added by pandas? how can i randomly select say 100 values from all columns just to see the kind of data each has?
+
+I want to show the percentage of missing values of each column as well.
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+id rather use index_col=0 while reading to save some memory  - or is there a way to just directly drop the col while reading itself which is faster than reading it as the index
+
+what more can i do to examine the BSE universe data apart from BSE.head() ? heres what we know: each col is one day, comprised of that days universe of bse200
+
+however, bse200.shape gies us 202, 7826 - why are there 202 rows when i would expect 201? additionally, how to list out the range of all dates (column names here) and a random sample of 100 columns alongwith their data
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+yes, sometimes last row sems to be NaN, sometimes even second last row is Nan but sometimes both have values, since isna().all returned False for all rows. Does this need fixing later? How can we ensure we dont lose data?
+
+am i correct in itnerpreting that (how="all") only drops if all values are NaN
+
+why do we need errors='coerce'
+
+Even without converting to datetime, min()and max() are workign directly on the string cvolumn names which are writted in YYYYMMDD format i think specifically to enable this function. So is date conversion even neccesary?
+
+how to keep output of np.random.choice sorted? must i wrap it i another np.sort() call?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+lets come to combinign dataframes bse200 with price_data dataframes
+
+lets keep in mind we will today, implement ALL various pairs trading strategies possible. We will train each strategy twice, once on open source data/other data, once on arthalpha's BSE200+prince_csv data. So we want to ensure our approach to preparing this data is modular and can be mapped to a different dataset which may be of even lower quality etc. These were the key points shared by Hunar:
+> prices lists tickers in format CODE<space>IN<equity>; bse200 data lists tickers in format CODE<space>IB -- we need to confirm this format is followed consistently throughout, and then correct it so only ticker CODE remains...
+> Universe: BSE200 (we must only use stocks that are in the index on that date). --- my thought: but maybe if we expand our approach to using other prices available as well, wouldn't it help us? At the very least, we should find ALL unqiue tickers present in BSE 200, ie. all companies that were EVER listed in BSE200 ever across all our dates, and then pull out prices for all of them. This way while determining pairs, i think we'll have a little better likelihood of finding effective pairs, even in cases where a stock has recently been dropped out of the 200 list but still moves alongwith some of the stocks still listed in 200. What do you think about this? think deeply on THIS aspect
+> For volume, replace NaN with 0 (not back filled with last known value).
+> Price fields: focus on PX_LAST or VWAP (EQY_WEIGHTED_AVG_PX); back filled with last known value missing prices -- no need to make too complex but can explore other methods for missing data too. Missing data handling is important — think of better approaches beyond back fill.
+
+
+btw, what does .resample("M") do?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+in longbse.loc[:, ['date','ticker']].drop_duplicates() why do you use drop_drplicates? when we did remove of nan earlier why do you fear again there could be duplicates? I saw in debug mode that the shape of longbse did change, it reduced by about 2000 rows, which makes me wonder how can the same date-ticker pair get repeated in this? lets look at longbse which would be the final return of our process_universe function (renamed from your load_bse200_universe). Why have you addded in_bse200 hardcoded=1 flag for all these?
+
+Also, why did we choose vwap over last as our default price value? Does that help?
+
+i dont understand the way you have built universemode and membership masks and integrate prices with universe function -- how are we trying to structure the final data to work with for the models? would we retain the structure of the bse200 df and enrich it with values from the price? that makes sense but how can we make it more understandable?
+
+also, if we already did drop_duplicates() above do we really need to do it again in build_membership_masks? Why in this function have you used .assign(in_bse200=1) ? what do you mean by "ever constituents"? The following is the 3 universe mods i have come up with:
+from enum import Enum
+class UniverseMode(str, Enum):
+    LIVE_ONLY = "live_only"          # A (discovery constrained, trading constrained to same day)
+    LONGER_DISCOVERY = "longer" # B (discovery on union, trading constrained to same day)
+    EXTENDED = "extended" # C (discovery on union, trading allowed to grace period)
+
+but howto use this class?
+what do you mean by Calendar: Work on the intersection of trading days across codes (≥ 90% cross-section completeness filter if you want).
+
+Sanity gates: No new entries on days with market stress (e.g., cross-sectional median |return| > p90 of last 252d).
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+okay there is something seriously wrong. only all the ticker with TTMT/A got flagged in fuplicates, and all 3530 were dropped. This is definitely a bug, i dont see why this is being recognised as duplicates??
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+i have two issues with your code: it is incomplete (no sign of using a few things anywhere inspite of defining it earlier - maybe you renamed probably) and you frequently restructure code without acknolwedging that you did - so it is difficult and effort intensive for me to follow. I only send you a message after having gone through your entire first output, so ideally you should only reiterate over what you've already shared earlier: show updates done, explain why, and make in-place changes rather than full rewrites which overwhelms me and wastes my time. Also, i need you to make your codes very well documented, richly commented - explaining logic at each step or what each step does; the comments should be verbose - i can remove them later if trivial but it helps me understand the code faster, and understandably would help other readers of my code as well. Tell me, is this a right strategy to first go through and understand everything you've shared before coming back with follow ups?
+
+in standardize_prices, i'll prefer to call normalise_ticker instead rather than rewriting same logic again - modularity! also, in integrate_prices_with_universe i'd prefer to let the function call read_price_in_chunks instead of me doing it and then sending it in
+
+So now tell me, are we correctly doing in elif mode == UniverseMode.EXTENDED what we should be doing? i thought we will allow discovery for the entire history and only trading in the grace period - but it appear we are allowing even discovering only in the grace period? Am i seeing this right? and which strategy of these two do you think is better. Please explain the reasoning and logic behind what this entire core is doing:
+    for rawchunk in price_iterable:
+        stdf = standardize_prices(rawchunk, ffill_limit=ffill_limit)
+
+        if mode == UniverseMode.LIVE_ONLY:
+            # strict: keep only (date,code) that are actually in BSE200 that day
+            stdf = stdf.set_index(['date','ticker'])
+            stdf = stdf.join(live_mask, how='inner') #inner join
+            stdf = stdf.drop(columns='in_bse200')
+            frames.append(stdf.reset_index())
+
+        elif mode == UniverseMode.LONGER_DISCOVERY:
+            # keep only ever-constituents for discovery; still trade-day filter done later in signal engine
+            stdf = stdf[stdf['ticker'].isin(longer_mask)]
+            frames.append(stdf)
+
+        elif mode == UniverseMode.EXTENDED_TRADING:
+            # allow through if live today OR within grace after last_in_date
+            stdf = stdf.merge(last_index_mask, on='ticker', how='left')
+
+            stdf['allowed'] = (
+                stdf.set_index(['date','ticker'])
+                  .index.isin(live_mask.index)
+            ) | ((stdf['date'] > stdf['last_in_date']) & (stdf['date'] <= stdf['grace_until']))
+
+            frames.append(stdf[stdf['allowed']].drop(columns=['last_in_date','grace_until','allowed']))
+
+        else:
+            raise ValueError("Unknown mode")
+
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+can yo explain the logics we are using again?
+
+so we have a live mask which has date+ticker as keys and membership flag as value
+then a longer_mask (==> renamed to exhaustive_set_mask) which extracts a set of all unique tickers in the universe, last_index_mask which takes the last date upto the current moment when some ticker was present AND another column with +20 date -- obviously this works only if we iteratively run through bse200 and only provide build_universe_masks with bse200 data UPTO the current date of the backtest.
+
+Later, we integrate prices - so if LIVE_ONLY, we return a final list of oinly prices that are present in the live_mask yes?  inner join enable this by doing intersection - but dont we want to keep all bse stocks even if their price is not present? Or do we NOT wanna do that?
+
+if LONGER_DISCOVERY, we take all prices that are present in exhaustive_set_mask + attach a flag of whether some price,ticker pair was live (im renaming is_live_today to is_live because it corresponds to a pair of ticker+date so today seems unrelative.
+
+if EXTENDED_TRADING, we left join each latest pair of date,ticker onto price data -- so basically, all price data remains, alongwith that it gets added two new columns, what is the latest date for that ticker alongwith a grace -- so later each row can be compared within itself by using its own date against its grace_date or last_index_date  -- i am not entirely sure how do you ropose we are going to use all of this? Why did you use merge instead of join here?
+
+Is any of my understandings off or incomplete? generate comments from what i said above so they can be intuitive additoinal comments i can paste in the code
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+i dont see how EXTENDED TRADING is same as LONGER DISCOVERY - in what way is it preserving information on entire universe history? is it because last_index_mask has atleast one record for every single ticker and hence when we merge it onto standardized prices, all tickers get the flag joined onto them due to merge?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+i got this error:
+SettingWithCopyWarning:
+A value is trying to be set on a copy of a slice from a DataFrame.
+Try using .loc[row_indexer,col_indexer] = value instead
+
+See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy
+  tmpdf['is_live'] = tmpdf.set_index(['date','ticker']).index.isin(live_mask.index)
+
+also i added as_of_date in build_membership as well as price_integrate functoins -- how to declare its type and what default value shold i put in there? Today?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+can i instead write     as_of_date: DateLike | None = None, ? and why are we complexifying with a list of many datetime types? why cant we use just one?
+
+why do we need     as_of_date = pd.to_datetime(as_of_date)
+    universe_view = universe_long[universe_long['date'] <= as_of_date].copy()
+why cant we just use universe_data = universe_data[universe_data['date'] <= as_of_date]
+
+I THINK I LIKE MULTIINDEX APPROACH BETTER AS IT IS MORE STRAIGHTFORWARD - JUST sees if a pair of indices are present in another df and boolean flags it -- i think you should prefer keeping it simple too. ANyways, this time i did not get an error so it clearly worked
+
+now, lets move on to a simple run i did to check the shapes and everything. panel_ever was NOT the same shape as panel_extended/std price, while the latter two ARE exactly the same. In standardize_prices i printed the shape of whatever was being returned. As we can see, Panel LIVE is storing lesser rows as expected but only 66% of the total rows present in bse 200. Additionally, PanelEVER stores much rows, but lesser than std which is okay - however it is having dates starting from 1996, which clearly means it is storing lot of extra unwanted information - since we only want price data relevant to our universe right? Oh maybe it is kept historical prices starting frmo 1996 for tickers present in our current universe even when the universe composition starts later in 2003 -- maybe it is fine too. As for EXTENDED, that stores EXACTLY the same amout of data as present in std -- not sure if this is okay? that means we are keeping prices for tickers which we should be keeping?
+Universe processed with shape : (1568786, 3) in 3.5785 seconds
+Peek into universe :
+        date    ticker  in_bse200
+0 2003-09-17  1308108D          1
+1 2003-09-17   294928Q          1
+2 2003-09-17       ABB          1
+3 2003-09-17      ABNL          1
+4 2003-09-17       ACC          1standardized prices shape :  (6731745, 6)
+Panel LIVE processed with shape : (1066821, 6) in 23.1598 seconds
+Peek into Panel LIVE :
+        date    ticker   price    volume  PX_LAST  PX_VOLUME
+0 2004-09-27  1958850D  121.12  288740.0   121.12   288740.0
+1 2004-09-28  1958850D  116.12  125990.0   116.12   125990.0
+2 2004-09-29  1958850D  118.90  172215.0   118.90   172215.0
+3 2004-09-30  1958850D  115.71  126930.0   115.71   126930.0
+4 2004-10-01  1958850D  116.47   95520.0   116.47    95520.0
+standardized prices shape :  (6731745, 6)
+Panel EVER processed with shape : (2628296, 7) in 22.9254 seconds
+Peek into Panel EVER :
+        date    ticker  price  volume  PX_LAST  PX_VOLUME  is_live
+0 1996-01-01  1958850D   4.93     0.0     4.93        NaN    False
+1 1996-01-02  1958850D   4.93     0.0     4.93        NaN    False
+2 1996-01-03  1958850D   4.93     0.0     4.93        NaN    False
+3 1996-01-04  1958850D   4.89     0.0     4.89        NaN    False
+4 1996-01-05  1958850D   4.93     0.0     4.93        NaN    False
+standardized prices shape :  (6731745, 6)
+Panel EXTENDED processed with shape : (6731745, 11) in 29.9374 seconds
+Peek into Panel EXTENDED :
+        date    ticker  price  volume  PX_LAST  PX_VOLUME last_in_date  \
+0 1996-01-05  1909315D   4.27     0.0     4.27        NaN          NaT
+1 1996-01-11  1909315D   3.93     0.0     3.93        NaN          NaT
+2 1996-01-25  1909315D   3.42     0.0     3.42        NaN          NaT
+3 1996-01-29  1909315D   3.25     0.0     3.25        NaN          NaT
+4 1996-01-30  1909315D   3.25     0.0     3.25        NaN          NaT
+
+  grace_until  is_live  within_grace  allowed_trade
+0         NaT    False         False          False
+1         NaT    False         False          False
+2         NaT    False         False          False
+3         NaT    False         False          False
+4         NaT    False         False          False
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+we can do tmpdf = stdf[stdf['ticker'].isin(exhaustive_set_mask)].copy() to fix EXTENDED but really we dont need to do we? after tmpdf = stdf.merge(last_index_mask, on='ticker', how='left') we basically already have necessary information on what was the composition of stocks in the universe -- after all exhaustive_set_mask is a series of 504 len, and last_index_mask is a df of 504*2 -- essentially they preserve the same information. But i think you are right, in order to keep things consistent, we shold use the same code which is to make use of exhaustive_set_mask here. But again, DO WE need to remove non-universe stocks? i think that'll be good considering we want to revolve aroud the universe itself... and i'll add an instruction to comment out the copy() line in EXTENDED if user ever wants to play with more than universe
+
+now, why do we need to do tmpdf.loc[:, 'within_grace']  = ... and cant do tmpdf['within_grace']  =  .. instead? which is faster?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+cool, now i am at the top of everything we have done uptil now. Gosh, i am so slow :( if i keep being this slow, how will we ever achieve greatness together?
+
+Now let us move with implementing distance approach, cointegration approach, stochastic aproach, time series approach, PCA approach, copula approach on this nice and tasty data we have just prepared. *LETS TRY TO IMPLEMENT EVERYTHING FROM SCRATCH, BUT IN ADDITION IF YOU ARE AWARE OF PRE BUILT LIBRARIES WE CAN USE, DO LET ME KNOW ABOUT THOSE AS WELL* I think in the case of EXTENDED/LONGER mode, for pairs "selection" we can  refer to the entire history of prices all the way from 1993, and then for trading we can keep ourselves to the the output from entry_allowed function. Then later as an experiment we can backfill the universe data from 2003 back to 1993 (i'll try to find the data from open source and get back to you) to see how the trading backttest performs if we start from 1993 itself as well.
+
+While coming up with your solution, try to keep your approach modular, and add docstrings to the function sure, but more helpful is if you add comment for each line of code as you go, so i can read and understand each line as it happens. Make it verbose, i can cut out later if i want. Continue to make use of python best practises -- i appreciate learning them as i code with you. this time since we are venturing into a new chapter of our project, you can be as creative as yo like and dont necessarily have to conform to previous structures/thoughts on code design we have had -- go ahead with thinking as deeply as possible and coming up with implementations of each of those approaches as well as explanations of them. I am not sure how we shld approach this, like first all pairs selection then all backtesting individually designed for each approach, or one single function for backtesting the same way we have one single function for data processing/integration and using it across the various strategies. I think the earlier might be better but you can decide on this and let me know. Lastly i'd also like to remind you that we want to look at the 5 metrics namely CAGR, annualised volatility, sharpe ratio, max drawdown, turnover.
+
+One last point to note is, we have only a few hours to go before the meeting with ArthAlpha, so i want all these results ready to showcase. I think i can take my sweet time understanding whatever you have come up with in parallel, but first i should put to train these models -- so can you can you guide how can we do that? I have the HPC facility where i can run PBS scripts on GPU nodes, and we also have google collab's free online GPU which can also be used. But i am a beginner to this python-for-infrastructure and dont have an idea on how to write such code that could efficiently utilise GPU and multiple CPUs in python? I mean i have limited GPU hours but unlimited CPU hours - so lets say i start a PBS job requesting 8 CPUs and say 16 gb memory or 32 gb memory, can we achieve good results with those too? So do we even require so much compute for training these basic stat-based models?  think deeply
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+okay thats a good start but i need you to think deeply. GO through everything you shared with me just now and have a second review - to enrich stuff you've already given (add more well thought-out designed code), provide detailed comments *FOR EVERY SINGLE* line of code so i can type it out slowly line by line and understand whats happening, fill gaps that may be missing (e.g  where does the joblib go, which for loop it replaces, what exactly does it do, etc e.g.2 run_pairs_experiment.py -- what is the contents of this py file? if it is just the "putting it together" you shared, next time onwards mention it e.g. 3 if we are running a file on the PBS, i'd surely need to first define all the data processing functions we came up with earlier as well inside of it right? so next time onwards tell me -- for now i'll handle this myself so long as you leave a blank space in the final run_pairs_exp file and tell me where to import funcs/run them), how many PBS jobs do i need to start, will the joblib code yo are proposing automatically run all 6 strategies in parallel if i start it on a queue with 16 CPUs and 32 gb mem? are 16 cpus even required and how do we decide that -- can we make do with 8 CPUs considering we have 6 strategies we are training?
+
+What shold be my next step? should i save all these files in each of their own in src and then start the PBS script? Provide detailed instructions. And id like to reiterate: please provide verbose line by line comments meticulously. I will start MY line by line reasing and understanding exercise of your code once it feels more digestible. think deeply and give your best foot forward. you got this.
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+Why do we need to run each stat model line by line and cannot train all of them in parallel? will that get too complex to understand later?
+
+Also, lets add more print/log statements so the use can see what is happening, at vairous places - you can suggest. For your information, i changed the data part in run_pairs_experiment a little so that if --panel_path (renamed to --data_preference) has a suffix ".parquet" it uses the code you gave to read_parquet, else if --data_preference has one of the 3 universe modes, it reads the data into panel using appropriate code. If've kept default value as LIVE_ONLY and even included check to see if input value is present in UniverseMode else throw error
+
+Now, similar to the function:
+def gate_live_only(dt, a, b):
+    """
+    Universe gate called at entry time. This no-op returns True.
+    If your panel carries 'is_live' or 'allowed_trade' flags by (date,ticker),
+    replace this function to check those flags.
+    """
+    return True
+i know you previously gave the helper:
+def entry_allowed(mode: UniverseMode, flagsA: dict, flagsB: dict) -> bool:
+    """
+    Consistent gating for pair entries across modes.
+    flagsA/flagsB are row dictionaries or Series with keys:
+      - is_live
+      - allowed_trade (only used in EXTENDED_TRADING)
+    """
+    if mode in (UniverseMode.LIVE_ONLY, UniverseMode.LONGER_DISCOVERY):
+        return bool(flagsA.get('is_live', False) and flagsB.get('is_live', False))
+    if mode == UniverseMode.EXTENDED_TRADING:
+        return bool(flagsA.get('allowed_trade', False) and flagsB.get('allowed_trade', False))
+    return False
+So how can we rewrite the function to use these contents? And what could be a better, more understandable name of this function?
+
+Also,i have slightly modified the repo structure to look like:
+src/
+  __init__.py
+  run_pairs_experiment.py
+  statistical/
+    distance.py
+    cointegration.py
+    timeseries.py
+    stochastic.py
+    pca.py
+    copula.py
+  utils/
+    base.py
+    backtestengine.py
+    dataprep.py
+This is just for your information - i have already updated all imports to always start from src.module.filename for robustness.
+
+Coming to first run results.
+[Parallel(n_jobs=8)]: Using backend LokyBackend with 8 concurrent workers.
+[Parallel(n_jobs=8)]: Done   2 tasks      | elapsed:   11.0s
+[Parallel(n_jobs=8)]: Done  56 tasks      | elapsed:   11.1s
+[Parallel(n_jobs=8)]: Done 1688 tasks      | elapsed:   11.3s
+[Parallel(n_jobs=8)]: Done 19080 tasks      | elapsed:   12.8s
+[Parallel(n_jobs=8)]: Done 19503 out of 19503 | elapsed:   12.9s finished
+/home/svu/e1554287/projects/FinSight-QuantLab/src/statistical/pca.py:18: FutureWarning: The default fill_method='pad' in DataFrame.pct_change is deprecated and will be removed in a future version. Either fill in any non-leading NA values prior to calling pct_change or specify 'fill_method=None' to not fill NA values.
+  R = hist.pct_change().dropna()
+File ~/projects/FinSight-QuantLab/src/run_pairs_experiment.py:179, in main()
+    176 port_ou.to_csv(out_dir / "ou_portfolio_pnl.csv")
+    178 # ---------- PCA (Residual Index) ----------
+--> 179 pnl_pca = pca_residual_pnl(panel, window_days=args.formation_days, n_components=5)
+    180 perf_pca = evaluate_portfolio(pnl_pca)
+    181 pd.DataFrame({
+    182     "metric": ["CAGR","AnnVol","Sharpe","MaxDD","Turnover"],
+    183     "value":  [perf_pca.cagr, perf_pca.ann_vol, perf_pca.sharpe, perf_pca.max_dd, perf_pca.turnover]
+    184 }).to_csv(out_dir / "pca_metrics.csv", index=False)
+
+File ~/projects/FinSight-QuantLab/src/statistical/pca.py:22, in pca_residual_pnl(panel, window_days, n_components)
+     20 pca = PCA(n_components=n_components, random_state=42)
+     21 X = R.values
+---> 22 X_hat = pca.inverse_transform(pca.fit_transform(X))
+     23 residual = pd.DataFrame(X - X_hat, index=R.index, columns=R.columns)
+     24 idx = residual.mean(axis=1)
+ValueError: Found array with 0 sample(s) (shape=(0, 484)) while a minimum of 1 is required by PCA.
+
+So there are third immediately apprent problems. One, why did PCA end up with an array of 0 elements and how can we fix this? second, even before this failed, all those [Parallel...] lines dont really share much information about where they are/which model/ etc do they -- so as said earlier we need to add more print/logging statements? Third, its good we've kept a way for us to know the progress or output of earlier models if later ones fail by saving each in results folder. So maybe we should add an argument which takes only those names as input which models we require it to run...
+
+Your first approach shold be to understand piece by piece all the various things i have brought up i my message. Then structure them into a list of tasks to respond to, then respond one by one. Think deeply.
+
+As discussed earlier, only give extra statements to add and where instead of overwhelming me by rewriting the entire code. Also, any function definition shold ALWAYS have argument type and return type declaration for easy following, for the same reasons we are focusing on comments so much.
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+i sitll get error with PCA:
+========== RUNNING: PCA (Residual Index) ==========
+[PCA] window_days=252, hist_rows=252, initial_assets=484
+[PCA] failed: Input X contains NaN.
+PCA does not accept missing values encoded as NaN natively. For supervised learning, you might want to consider sklearn.ensemble.HistGradientBoostingClassifier and Regressor which accept missing values encoded as NaNs natively. Alternatively, it is possible to preprocess the data, for instance by using an imputer transformer in a pipeline or drop samples with missing values. See https://scikit-learn.org/stable/modules/impute.html You can find a list of all estimators that handle NaN values at the following page: https://scikit-learn.org/stable/modules/impute.html#estimators-that-handle-nan-values
+
+i misakenly ran distance twice but an interesting thing was, the second round of runs was 66% faster:
+[Distance] candidates: 198 tickers, 19503 pairs to score, formation_days=252, min_overlap=200, n_jobs=8
+[Distance] scoring pairs with Joblib ...
+[Parallel(n_jobs=8)]: Using backend LokyBackend with 8 concurrent workers.
+[Parallel(n_jobs=8)]: Done   2 tasks      | elapsed:    4.2s
+[Parallel(n_jobs=8)]: Done  64 tasks      | elapsed:    4.3s
+[Parallel(n_jobs=8)]: Done 2320 tasks      | elapsed:    4.6s
+[Parallel(n_jobs=8)]: Done 19176 tasks      | elapsed:    6.1s
+[Parallel(n_jobs=8)]: Done 19503 out of 19503 | elapsed:    6.1s finished
+[Distance] scored 19503 valid pairs.
+[Distance] selected Top-40 pairs. Example: [('IOB', 'UCO', 0.9725281763688651), ('CCRI', 'IRCTC', 1.2682350717978168), ('INFOE', 'SIEM', 1.6481264864602425)]
+[Distance] done. Metrics saved to distance_metrics.csv
+========== RUNNING: DISTANCE ==========
+[Distance] candidates: 198 tickers, 19503 pairs to score, formation_days=252, min_overlap=200, n_jobs=8
+[Distance] scoring pairs with Joblib ...
+[Parallel(n_jobs=8)]: Using backend LokyBackend with 8 concurrent workers.
+[Parallel(n_jobs=8)]: Done   2 tasks      | elapsed:    0.0s
+[Parallel(n_jobs=8)]: Done 176 tasks      | elapsed:    0.1s
+[Parallel(n_jobs=8)]: Done 8688 tasks      | elapsed:    1.0s
+[Parallel(n_jobs=8)]: Done 19503 out of 19503 | elapsed:    1.9s finished
+[Distance] scored 19503 valid pairs.
+[Distance] selected Top-40 pairs. Example: [('IOB', 'UCO', 0.9725281763688651), ('CCRI', 'IRCTC', 1.2682350717978168), ('INFOE', 'SIEM', 1.6481264864602425)]
+[Distance] done. Metrics saved to distance_metrics.csv
+
+Anyways, i went through the results generated uptil now, and nothing seems to make sense...
+Detailed Metrics:
+                    Total Return  Annualized Return  Annualized Volatility  \
+ou                          -1.0            -0.4941                 0.2403
+copula                      -1.0            -0.4933                 0.2400
+run1_distance               -1.0            -0.5344                 0.2678
+distance                    -1.0            -0.5344                 0.2678
+run1_ou                     -1.0            -0.4941                 0.2403
+cointegration               -1.0            -0.5727                 0.2676
+run1_cointegration          -1.0            -0.5727                 0.2676
+
+                    Sharpe Ratio  Max Drawdown  Win Rate  \
+ou                       -2.0557          -1.0    0.4360
+copula                   -2.0558          -1.0    0.4234
+run1_distance            -1.9957          -1.0    0.4235
+distance                 -1.9957          -1.0    0.4235
+run1_ou                  -2.0557          -1.0    0.4360
+cointegration            -2.1405          -1.0    0.4272
+run1_cointegration       -2.1405          -1.0    0.4272
+
+                    Active Trading Days %  Total Trading Days
+ou                                 0.9844              5317.0
+copula                             0.9765              5274.0
+run1_distance                      0.9793              5289.0
+distance                           0.9793              5289.0
+run1_ou                            0.9844              5317.0
+cointegration                      0.9833              5311.0
+run1_cointegration                 0.9833              5311.0
+
+Strategy Correlations:
+                       ou  copula  run1_distance  distance  run1_ou  \
+ou                  1.000   0.192          0.283     0.283    1.000
+copula              0.192   1.000          0.505     0.505    0.192
+run1_distance       0.283   0.505          1.000     1.000    0.283
+distance            0.283   0.505          1.000     1.000    0.283
+run1_ou             1.000   0.192          0.283     0.283    1.000
+cointegration       0.393   0.327          0.376     0.376    0.393
+run1_cointegration  0.393   0.327          0.376     0.376    0.393
+
+                    cointegration  run1_cointegration
+ou                          0.393               0.393
+copula                      0.327               0.327
+run1_distance               0.376               0.376
+distance                    0.376               0.376
+run1_ou                     0.393               0.393
+cointegration               1.000               1.000
+run1_cointegration          1.000               1.000
+
+i got these by doing a simple of the following on the pnl files
+    # Daily metrics
+    daily_returns = pnl_series
+    cum_returns = (1 + daily_returns).cumprod()
+
+    # Basic metrics
+    total_days = len(daily_returns)
+    trading_days = (daily_returns != 0).sum()
+    active_rate = trading_days / total_days
+
+    # Performance metrics
+    total_return = cum_returns.iloc[-1] - 1
+    ann_vol = np.std(daily_returns) * np.sqrt(252)
+    ann_return = (1 + total_return) ** (252 / total_days) - 1
+    sharpe = ann_return / ann_vol if ann_vol != 0 else 0
+
+    # Drawdown analysis
+    rolling_max = cum_returns.expanding().max()
+    drawdowns = cum_returns / rolling_max - 1
+    max_drawdown = drawdowns.min()
+
+    # Win rate analysis
+    wins = (daily_returns > 0).sum()
+    losses = (daily_returns < 0).sum()
+    win_rate = wins / (wins + losses) if (wins + losses) > 0 else 0
+
+
+Why is the data so similar in all strategies? this doesnt look like good results to show at all. where have we gone wrong in our backtesting?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+say all of that again, but this time be more clear about where exactly in the codebase shold i be adding these changes? tell me the filename and the actual before/after code lines to add something, not just ambiguous "XYZ part" descriptions - both for the new print statements as well as for the fixes.
+
+If required: let us rewrite all of these functions (we shold definitely rewrite PCA file from scratch) if we need to (from start to finish) with more conformity to what those strategies each is supposed to be doing. And we shld add verbose comments everywhere like we are doing in distance. Additionally, we shld pepper each strategy with a lot of print statements - it is okay if the outputs logs are long but atleast it tells us how the steps are progressing as the model learns. Also explain what does each of the pnl and metrics file mean, alongwith a good way to visualise and interpret those files so i can share with you what the output has been to help us tweak them more.
+
+You dont need to repeat information abouut parallelism, CLI robustness, universegate ==> as i already put them in after our last chat; i now need more focus on you giving me better versions of all the strategies while striking the right balance between not unnecessarily editing where not required (like distance maybe), adding only comments where required (like backtestingengine code has less comments, copula has literally 0 comments and neither does stochastic nor does timeseries.py), and adding better code/algorithm where required. I am currently totally clueless about what i am going to say in the meeting and i dont like this. For now, i am okay if you just rewrite all the files' contents and give me so i can run the entire thing again, and then do the visualising using whatever you're gonna give
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+keep the above exactly the same if you want or have a second read through them and refine/improve them if you would like and resend everything to me - BUT THIS TIME REMEMBER TO BE VERBOSE AND ADD COMMENTS EXPLAINING EACH AND EVERY LINE IN EACH AND EVERY FILE OF ALL THE CODE THAT YOU GIVE ME. There shld not be even a single line of code without a comment attached to it, i dont care and i dont understand how else to explain this to you.
+
+=============================================================================================================
+=============================================================================================================
+I think you missed to add build_universe_gate and UniverseMode in backtestengine so i copied over what we came up with previously and everything else i kept the same as you shared.
+
+When i ran we got a few of these warnings:
+/home/svu/e1554287/projects/FinSight-QuantLab/src/utils/base.py:157: FutureWarning: The default fill_method='pad' in Series.pct_change is deprecated and will be removed in a future version. Either fill in any non-leading NA values prior to calling pct_change or specify 'fill_method=None' to not fill NA values.
+  ra = sub[pair.a].pct_change()                              # arithmetic daily return for leg A
+/home/svu/e1554287/projects/FinSight-QuantLab/src/utils/base.py:158: FutureWarning: The default fill_method='pad' in Series.pct_change is deprecated and will be removed in a future version. Either fill in any non-leading NA values prior to calling pct_change or specify 'fill_method=None' to not fill NA values.
+  rb = sub[pair.b].pct_change()                              # arithmetic daily return for leg B
+^a lot of these are printed for every model -- we are facing some kind of errors on base.py's pct_change() usage.
+
+Also, all models took a long time at their first half (look at my comment ## hangs here for a bit) and presumably did stuff in the backgroud before outputting the metrics respectively. I suppose when the model is fitting, it needs more print statements to tell us what's happening. Since we have implemented this from scratch, this shold be possible.
+
+These are the results each is outputting...
+[Distance] candidates=198, pairs=19503, formation_days=252, min_overlap=200, n_jobs=8
+[Distance] scoring pairs with Joblib ...
+...
+[Parallel(n_jobs=8)]: ...
+...
+[Distance] scored valid=19503
+[Distance] selected Top-40; sample=[('IOB', 'UCO', 0.9725281763688651), ('CCRI', 'IRCTC', 1.2682350717978168), ('INFOE', 'SIEM', 1.6481264864602425)]
+[Distance] generated returns for 40 pairs.
+[Engine] portfolio daily returns: mean=0.000978, std=0.015608, min=-0.097, max=0.139
+[Metrics] CAGR=24.08% | Vol=24.78% | Sharpe=0.99 | MaxDD=43.58% | Turnover≈63.0
+[Distance] done. Metrics saved to distance_metrics.csv
+========== RUNNING: COINTEGRATION ==========
+[Coint] candidates=198, pairs=19503, p_cut=0.05 ## hangs here for a bit
+[Coint] passed=1624
+[Coint] selected Top-40; sample=[('ATGL', 'CCRI', 0.98892525960799), ('MRCO', 'UBBL', 0.8800103030005437), ('NYKAA', 'SBILIFE', 0.7484452145477444)]
+[Coint] generated returns for 40 pairs.
+[Engine] portfolio daily returns: mean=0.000287, std=0.015569, min=-0.117, max=0.158
+[Metrics] CAGR=4.28% | Vol=24.72% | Sharpe=0.29 | MaxDD=75.91% | Turnover≈51.0
+[Coint] done. Metrics saved to cointegration_metrics.csv
+========== RUNNING: OU (Time-Series) ==========
+[OU] candidates=198, max_half_life=35.0d
+[OU] selected Top-40; sample=[('IOB', 'UCO', 0.9725281763688651), ('NYKAA', 'SBILIFE', 0.7484452145477444), ('APHS', 'UNITDSPR', 0.6934351121432863)]
+[OU] generated returns for 40 pairs.
+[Engine] portfolio daily returns: mean=0.000322, std=0.013909, min=-0.119, max=0.159
+[Metrics] CAGR=5.84% | Vol=22.08% | Sharpe=0.37 | MaxDD=75.67% | Turnover≈53.0
+[OU] done. Metrics saved to ou_metrics.csv
+========== RUNNING: PCA (Residual Index) ==========
+[PCA] window_days=252, hist_rows=252, assets=484
+[PCA] after NA filter: rows=0, cols=484
+[PCA] Skipping (insufficient data). Returning zero series.
+[Metrics] CAGR=0.00% | Vol=0.00% | Sharpe=0.00 | MaxDD=-0.00% | Turnover≈0.0
+[PCA] done. Metrics saved to pca_metrics.csv
+========== RUNNING: COPULA ==========
+[Copula] candidates=198
+[Copula] selected Top-40; sample=[('IOB', 'UCO', 0.9725281763688651), ('CBOI', 'IOB', 0.973932048197667), ('CBOI', 'UCO', 0.9450407615732804)]
+[Copula] generated returns for 40 pairs.
+[Engine] portfolio daily returns: mean=0.000628, std=0.014293, min=-0.073, max=0.107
+[Metrics] CAGR=14.18% | Vol=22.69% | Sharpe=0.70 | MaxDD=50.76% | Turnover≈63.0
+[Copula] done. Metrics saved to copula_metrics.csv
+All strategies completed. CSVs written to: /home/svu/e1554287/projects/FinSight-QuantLab/results
+
+What do you think about these numbers? Distance has a good CAGR and highest Sharpe followed by Copula. CAGR for Coint/OU is prettyyyy low, with higher drawdowns too. Volume for them all is the same - did something happen in our backtesting to cause all volumes to be so similar?
+
+One thing which i think might be better is, equity curves in the last run was going DOWN, now it is going up. Idk what was the issue with the last run. Although, i think we need a few more metrics/visualisations, like maybe the movement of selected pairs by each over time. Maybe we can plot all 40 pairs in one plot of maybe 10 pairs each in a grid of 4 plots. Each pair can have same colour alongwith legend so it is easy for us to quickly identify the pairs. I think we can use plotly for this which is more interactive and better suited for this task i believe. Attaching the two plots of before our latest changes and after. Additionally, for your information i have modularised our visualisation code in this way:
+from config import RESULTS_DIR
+def load_files_as_series(resList: List) -> dict:
+    """Load multiple CSV files from RESULTS_DIR into a dictionary of pandas Series."""
+    series = {}                                           # container for return series
+    for name, fname in resList:                            # list of (label, filename) pairs
+        s = pd.read_csv(RESULTS_DIR / fname, index_col=0, parse_dates=True).iloc[:,0]  # load first column as Series
+        series[name] = s                                                   # store in dict
+    return series
+def plot_equity_curves(series: Dict[str, pd.Series]):
+    plt.figure(figsize=(12,6))                                # open figure
+    for name, s in series.items():                            # iterate over series
+        eq = (1 + s.fillna(0.0)).cumprod()                    # compute equity curve
+        plt.plot(eq.index, eq.values, label=name)             # plot equity curve
+    plt.title("Equity Curves (gross, no costs)")              # add title
+    plt.legend()                                              # show legend
+    plt.grid(True)                                            # add grid
+    plt.show()                                                # display plot
+
+def summarize_metrics(s: pd.Series) -> pd.Series:                 # metrics helper
+    s = s.fillna(0.0)                                     # fill NaNs
+    eq = (1+s).cumprod()                                  # equity
+    cagr = (eq.iloc[-1]/eq.iloc[0])**(252/len(s)) - 1 if len(s)>0 else 0  # CAGR
+    vol  = s.std()* (252**0.5)                            # annualized vol
+    sharpe = (s.mean()/ (s.std()+1e-12))* (252**0.5)      # Sharpe
+    dd = (eq/eq.cummax()-1).min()                         # max drawdown
+    return pd.Series({"CAGR":cagr, "Vol":vol, "Sharpe":sharpe, "MaxDD":dd})  # return row
+def main(resList: List):
+    series = load_files_as_series(resList)                  # load all series
+    plot_equity_curves(series)                              # plot equity curves
+    metrics = pd.DataFrame({k: summarize_metrics(v) for k,v in series.items()}).T  # build table
+    display(metrics)                                        # show metrics dataframe
+
+In your next answer, focus on first drafting out all the questions i have listed to you in a list of tasks. Then answer them one by one but address each question only once - not that other style where you answer all in short first then all in long form later. I think since now our code is some parts functioning we shold rewrite entire files anymore and only segments of it wherever you feel necessary. So based on the metrics i shared if you feel you want to finetune some of the models, tell me where exactly to paste the new lines of code; remember to follow our rules about comments for every new line. Btw why is PCA not working, how come all of its rows are all NaNs or whatever - what can we do to fix this?
+
+Additionally, is there a way we can parallelize more of the other models as well like we did with distance?
+
+=============================================================================================================
+=============================================================================================================
+
+before i run this, can we improve/enrich the stochastic and copula strategies as well alongwith adding progress ticks/parallelization  for them as well or not required? okay, give the tiny parameter lines to tweak in each
+
+about "add the market_gate for cross sectional return > 90 pence" --- what does this mean? we will add that AND  the max holding days as well AND try on a different universe mode in the next run alongwith tweaks on backtestengine as well, BUT for THIS iteration let us keep the data same and only introduce the tweaks in each model - so give me those for distance/copula/stochastic and even cointegration/timeseries where required. I think from your latest answer we have some necessary tweaks to PCA already.
+
+as for the funcstions you gave for visualisation - good start but where shld i get the panel_long and pairs for each strategy? Panel_long i can still read in frmo the same parquet used to train the models but what about model-wise pairs? i think since the core logic for both matplotlib and pyplot is same, combine the two plot_pairs into a single function and an additional argument "plotter" = pyplot OR mplib -- if pyplot, it shld also save down an HTML with all its charts, whereas if mplib it can just savedown a GIF with all its strategy-wise charts. So yes, that also means a yet another argument which probably replaces "pairs" parameter with a dictionary of strategy-pairs list so we can iterate over each strategy and within each loop keep the logic same as what you just came up with
+
+lastly, give me a short text which i can paste next to the chart i just printed for our previous run with essential information like model parameters used (now that we are changing in this iteration, we shold keep track of whats changing) -- for quick comparision later on
+
+=============================================================================================================
+=============================================================================================================
+ets refine those visualisation functions one. I've imported math/pyplot/mlp already and have defined these already:
+def load_files_as_series(resList: List) -> dict:
+    """Load multiple CSV files from RESULTS_DIR into a dictionary of pandas Series."""
+    series = {}                                           # container for return series
+    for name, fname in resList:                            # list of (label, filename) pairs
+        s = pd.read_csv(RESULTS_DIR / fname, index_col=0, parse_dates=True).iloc[:,0]  # load first column as Series
+        series[name] = s                                                   # store in dict
+    return series
+# This cell visualizes equity curves and a metrics table.  # comment: purpose
+def plot_equity_curves(series: Dict[str, pd.Series]):
+    plt.figure(figsize=(12,6))                                # open figure
+    for name, s in series.items():                            # iterate over series
+        eq = (1 + s.fillna(0.0)).cumprod()                    # compute equity curve
+        plt.plot(eq.index, eq.values, label=name)             # plot equity curve
+    plt.title("Equity Curves (gross, no costs)")              # add title
+    plt.legend()                                              # show legend
+    plt.grid(True)                                            # add grid
+    plt.show()                                                # display plot
+
+def summarize_metrics(s: pd.Series) -> pd.Series:                 # metrics helper
+    s = s.fillna(0.0)                                     # fill NaNs
+    eq = (1+s).cumprod()                                  # equity
+    cagr = (eq.iloc[-1]/eq.iloc[0])**(252/len(s)) - 1 if len(s)>0 else 0  # CAGR
+    vol  = s.std()* (252**0.5)                            # annualized vol
+    sharpe = (s.mean()/ (s.std()+1e-12))* (252**0.5)      # Sharpe
+    dd = (eq/eq.cummax()-1).min()                         # max drawdown
+    return pd.Series({"CAGR":cagr, "Vol":vol, "Sharpe":sharpe, "MaxDD":dd})  # return row
+
+and we have the draft of your plot_strategy_pairs as reference
+
+and finally the main function:
+def main(resList: List):
+    series = load_files_as_series(resList)                  # load all series
+    plot_equity_curves(series)                              # plot equity curves
+    metrics = pd.DataFrame({k: summarize_metrics(v) for k,v in series.items()}).T  # build table
+    display(metrics)                                        # show metrics dataframe
+
+Lets restructure these so that apart from the summarize_metrics, we have another function which can directly read the metrics files we have saved too and print those in the same format as summarize_articles to compare what the model saved vs what we calculated. I think both these are same. Additionally lets simplify the plotply situation - everytime, matplotlib prints the PNL graph + the pairs graphs to the notebook, and plotly separately plots the PNL graph + a dataframe of the metrics + all the pairs graphs all in one single HTML file. and the user need only call one main function, which has all files that could be required maybe in a nested dictionary format like main({"PNL":[                                  # list of (label, filename) PNLs
+        ("Distance","distance_portfolio_pnl.csv"),
+        ("Cointegration","cointegration_portfolio_pnl.csv"),
+        ("OU","ou_portfolio_pnl.csv"),
+        ("Stochastic","stochastic_portfolio_pnl.csv"),
+        ("Copula","copula_portfolio_pnl.csv"),
+        ("PCA","pca_returns.csv"),
+    ],
+    "metrics":[                                  # list of (label, filename) metrics
+        ("Distance","distance_metrics.csv"),
+        ("Cointegration","cointegration_metrics.csv"),
+        ("OU","ou_metrics.csv"),
+        ("Stochastic","stochastic_metrics.csv"),
+        ("Copula","copula_metrics.csv"),
+        ("PCA","pca_metrics.csv"),
+    ],
+"pairs":[                                  # list of (label, filename) pairs}
+        ("Distance","distance_pairs.csv"),
+        ("Cointegration","cointegration_pairs.csv"),
+        ("OU","ou_pairs.csv"),
+        ("Copula","copula_pairs.csv")]})
+
+Or some more modular and efficient way if you can up with would also be fine
+
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+
+this is a guide to my NUS' HPC system where i have obtained a login and have even cloned my github repo. I need your help, now, with referring to the "Build AI Financial Analyst" chat and help me with:
+1. training multiple deep high-parameter networks for pairs trading with the target of making full use of the GPU and CPU hours available to us
+2. implementing a complete end to end pipeline of pairs trading implementation step by step so i can follow along.
+3. Fine tuning and training foundational models like transformers and LLMs for stock explainability and analysis work.
+4. Implementing RAG and hosting the LLM live on the server which can then be queried from outside.
+5. as a stretch project: Using KDB+q to help us showcase diverse and robust knowledge-base-reasoning skills
+
+All very ambitious aims and we havent even started so lets get going. Coming to step 1. I wish to keep things lean, and hence was thinking of doing all development on my machine, git push and then pull on vanda, then only run the required .py file on the required data, save the model+its visualisations, then view them back from my main atlas node/PC. I aim to get codes in by git pull, the raw data in via scp one-time, and then ALL read/writes to the dataset and ALL model savedowns/weights savedowns done on /scratch/$USER which is my scratch dir. $HOME/projects-sam/FinSight-QuantLab is my main project dir which is currently storing all my codes. Additionally, any GIF or HTML visualisations and animations that we generate can also be stored in $HOME/projects-sam/FinSight-QuantLab/results so it is easy to move them around via git.  How should we aim to now build a small tensorflow model for conceptual purposes so we are clear on if our flows are working correctly? Look throu the vanda guide and tell me how can we start a small PBS job which loads TF and other required modules, then runs a py file that generates an output. We can store the pbs script in $HOME/pbs, and inside can rename $SCRATCH to refer to /scratch/$USER and cd to $HOME/projects-sam/FinSight-QuantLab so that anything we run post that is easily relative and understandable. For your help, I have done a quick module avail 2>&1 | grep -i tensorflow to know that the following are available to us:
+tensorflow-probability/0.16.0-foss-2021b
+tensorflow-probability/0.19.0-foss-2022a
+TensorFlow/2.5.3-foss-2021a
+TensorFlow/2.6.0-foss-2021a
+TensorFlow/2.7.1-foss-2021b
+TensorFlow/2.8.4-foss-2021b
+TensorFlow/2.9.1-foss-2022a
+TensorFlow/2.9.1-foss-2022a-CUDA-11.7.0
+TensorFlow/2.11.0-foss-2022a
+TensorFlow/2.11.0-foss-2022a-CUDA-11.7.0
+TensorFlow/2.13.0-foss-2023a
+Horovod/0.28.1-foss-2022a-CUDA-11.7.0-TensorFlow-2.9.1
+Horovod/0.28.1-foss-2022a-CUDA-11.7.0-TensorFlow-2.11.0
+
+(i can check for other things as well if you need). These are all the queues available to us:
+
+Queue            Max Memory Max CPUs Max GPUs Max Walltime Node   Run   Que   Lm  State
+---------------- ------     -------- -------- -------- ---- ----- ----- ----  -----
+interactive_cpu    --         --         -      12:00:00    2     2     0   --   E R
+interactive_gpu    --         --         2     12:00:00    2     7     3   --   E R
+batch_cpu          --         720        0     240:00:0   10    70    10   --   E R
+batch_gpu          --         720        2      168:00:0    2    56     2   --   E R
+auto               --         --                  --     --      0     0   --   E R -- route_destinations = batch_cpu,batch_gpu
+cpu_serial         20gb       1          0     168:00:0   10     0     0   --   E R
+cpu_parallel       --         640        0     168:00:0   10    16    10   --   E R
+gpu                --         36         2     48:00:00  --      5     1   --   E R
+auto_free          --         --                  --     --      0     0   --   E R -- route_destinations = cpu_serial,cpu_parallel,gpu
+gpu_amd                       144              48:00:00
+
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+
+Lets focus on the PBS script once.
+0. When we load the tensorflow module, do we not have to worry about any other libraries like numpy, pandas, matplotlib etc later? I know we shld let different modules clash/compete but also would we have ot keep pip installing all our required libraries like mlp, pyplot, etc etc? Or would we create a venv once and use that everytime? Would we prefer doing this with pip rather than conda since conda is a package/module in itself but pip atleast comes loaded alongwith our tensorflow module's python so we can do a one-time venv creation with it and then reuse it everytime? Whats your view?
+1. what do the batch queues do again? do they help us save on the "price" of using the hpc?
+2. Why are we requesting 36 cpus and 240 gb of ram? can we start with a smaller requested resources list? 36 cpu and 240 gb is too much no?
+3. also, i wish to run all models under project alias "finsight", even if it doenst mean anything but still helps me somehow later in grouping things
+4. Additionally, i foud some commands related to sanity checks as well, can we please include these:
+4.1. gpu_sanity
+module purge
+module load CUDA/12.1.1
+module load cuDNN/8.x-CUDA-12.1.1
+module load Python/3.10.8-GCCcore-12.3.0
+module load TensorFlow/2.15.0-foss-2023a-CUDA-12.1.1
+nvidia-smi || true
+python - <<'PY'
+import tensorflow as tf
+gpus = tf.config.list_physical_devices("GPU")
+print("GPUs:", gpus)
+if gpus:
+    for g in gpus: tf.config.experimental.set_memory_growth(g, True)
+    with tf.device("/GPU:0"):
+        a=tf.random.uniform([4096,4096]); b=tf.random.uniform([4096,4096]); _=tf.linalg.matmul(a,b).numpy()
+    print("TF GPU matmul OK")
+else:
+    print("No GPU visible to TF")
+PY
+
+4.2. cpu-sanity:
+module purge
+# load the SAME modules you tested on the login node:
+module load Python/3.10.8-GCCcore-12.3.0
+module load TensorFlow/2.15.0-foss-2023a
+python - <<'PY'
+import tensorflow as tf, multiprocessing as mp
+print("CPUs:", mp.cpu_count())
+a=tf.random.uniform([3000,3000]); b=tf.random.uniform([3000,3000]); _=tf.linalg.matmul(a,b).numpy()
+print("TF CPU matmul OK")
+PY
+
+5. I also foud this sample training script which never does any IO RW on the regular place and everything to scratch and in the end rsyncs back, can we please adapt it to our needs:
+# Paths
+WORK=$HOME/projects-sam/FinSight-QuantLab
+SRC=$WORK/src
+OUT=$WORK/models
+LOG=$WORK/logs
+SCRATCH=/scratch/$USER/$PBS_JOBID
+
+mkdir -p "$SCRATCH" "$OUT" "$LOG"
+cd "$SCRATCH"
+
+# Stage code in (small)
+rsync -a "$SRC/" ./src/
+
+# Run training
+python -u ./src/train.py \
+  --data_root "$WORK/data" \
+  --out_dir  "$SCRATCH/out" \
+  | tee "$SCRATCH/train.log"
+
+# Stage results back (single source of truth = projects-yourname)
+rsync -av "$SCRATCH/out/" "$OUT/"
+rsync -av "$SCRATCH/train.log" "$LOG/"
+
+# Clean scratch (optional; often auto-cleaned)
+rm -rf "$SCRATCH"
+
+6. finally i have this env knobs thing that maybe we can try including to ensure tf does parallelism across all the X cpus/gpus that we have requested? Threads i know is focused more on cpus, is there some other global variable we can set to make it use gpu as well?
+module purge
+module load cuda/12.1 cudnn/9.0                        # adjust to your cluster
+module load python/3.10
+
+cd "$PBS_O_WORKDIR"
+
+# Export the same env knobs as in your notebook top cell
+export TF_NUM_INTRAOP_THREADS=4
+export TF_NUM_INTEROP_THREADS=2
+export TF_ENABLE_ONEDNN_OPTS=1
+export TF_FORCE_GPU_ALLOW_GROWTH=true
+# export TF_XLA_FLAGS="--tf_xla_auto_jit=2"            # enable only after testing
+
+python -u train.py
+
+(then inside the code)
+# Small, explicit mirrors of the env settings (optional, but removes doubt)
+tf.config.threading.set_intra_op_parallelism_threads(4)
+tf.config.threading.set_inter_op_parallelism_threads(2)
+
+NOTE: I know you have included much of the above in the tf_smoke already but let those be there - right now i am aiming to come up with a standard pbs script template which we can then use everywhere
+
+
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+we need to record and submit a video explaining our entir project and i took the responsibility of doing the intro and conclusion - both need to pack a punch and really pull audience in, which is why my teammates chose me to work on it.
+
+This is what i have come up with in the introduction:
+We are ambitious men who have come together due to our shared interest in making a great product. Our mindset, as shaped by our environment and upbringing, has been around how can we add value to the world around us and leave it a better place than we found it. While studying our masters at NUS and doing our own research and discussion, we realised the amount of unutilised potential there is regarding the application of AI-aided technology in the lives of both retail and intermediate investors as well as professional market participants. The prevalent LLMs of our world have served well to augment the daily lives of people and generalise to a lot of use cases from quick queries about tasks to complex reasoning on code to displaying emotional wisdom in social situations. However, they still struggle with niche fields where even humans take years to achieve mastery, like abstract mathematics, quantum computing, medical science, and finance. We picked up the last one since we are passionate about quantitative research and wanted to come up with a solution to a problem that strikes the nerve of almost everyone dealing in the market today: how to locate market signals and patterns when they could be hidden anywhere. Especially with the endless streams of information and new data that global society at large keeps coming up with, handling this and extracting the useful minute details from this big pile could be akin to finding a needle in an exponentially growing haystack where the needle can jump it’s position periodically!
+So as good entrepreneurs who wish to make people’s lives easier, we bring to you FinSight. It is designed as a single source of truth for investors and market enthusiasts alike. This unified intelligence platform that makes it easier to  discover financial insights through integrated, real-time market data. As part of the platform we cover the 4 major apparatus any serious investor could need: a personal financial analyst assistant, consolidated news, live stock snapshots and an option for discovery/exploration of new sectors/stocks/news relevant to the individual user.
+
+first of all what do you think? is it took long/bit short? how can we improve it ad refine it?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+As for conclusion, i came up with this: In conclusion, FinSight brings clarity, consistency, and centralisation. We are confident this platform is especially useful for the independent investor with a lack of expensive professional tools at their disposal. As we learn from the example of iPhone, perfection in a product is achieved, like in any other realm of life on this Earth, through continuous improvement and a relentless struggle to achieve eminence. As it stands today, FinSight is a finished end-to-end MVP and can already start to be used as a AI-powered source of market insight and intelligence. We are passionate about continuing to make this product industry-ready, and hope to someday monetize it as an effective alternative to the other expensive competitors available today. What is more, we have given our hearts and best efforts to it, and we strongly feel that’s what truly matters. Thank you.
+
+Maybe yo have more ideas to add as well. How can we make this better and restructure to pack a memorable punch?
+
+
+=============================================================================================================
+=============================================================================================================
+
+
+as yo know i have hpc setup and i access it using ssh frlivanda where frlivanda is added to my local config. However, the following fails:
+scp frlivanda:/path/pbs/sam_rag_train.* ~/Projects/FinSight_BackEnd/app/hpc/logs
+
+why could this be?

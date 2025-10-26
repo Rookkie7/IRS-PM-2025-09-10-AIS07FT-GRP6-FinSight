@@ -1,0 +1,56 @@
+\chapter{Challenges}
+\section{News Browsing Module}
+
+The challenges anticipated in the proposal proved accurate: rampant content copying impacts ranking; aliasing across tickers and cross-language names can mis-link entities; and it is non-trivial to balance system complexity with both low latency and freshness. 
+
+In practice, we addressed these by:
+
+\begin{enumerate}
+	\item aggressive de-duplication and soft penalties for near-duplicates;
+	\item  a stricter ticker extraction and post-hoc “seen-ID” filter to avoid showing recently interacted items; 
+	\item a two-tier retrieval strategy (cached DB-only by default; tiny live refresh on demand) that keeps the interface responsive even under tight API limits. 
+\end{enumerate}
+
+
+Finally, we use incremental, bounded updates to the 20-d profile so that feedback is responsive without becoming volatile---an answer to the proposal’s concern that profile vectors must adapt frequently without instability.
+
+\section{Stock Recommendation Module}
+
+The development and deployment of the recommendation engine present several anticipated challenges that the project will need to address:
+
+Cold Start Problem: A significant challenge will be providing accurate and engaging recommendations for new users who have no browsing history, making their profile vector non-existent or very sparse. 
+
+Defining and Evaluating 'Success': While offline metrics like Recall@K are valuable, the true measure of success is user engagement and investment decisions, which are more difficult to quantify. How to accurately evaluate the recommendation engine's business impact will be a non-trivial challenge.
+
+Dynamic Nature of Financial Data: User interests and market conditions change rapidly. A user's profile vector must be updated frequently to reflect their evolving preferences. How to determine the optimal update frequency and decay rate for the user profile to remain responsive without becoming overly volatile
+
+\section{Stock Prediction System}
+
+
+Several challenges encountered during implementation closely aligned with the initial expectations.  
+The inherent non-stationarity of financial time series led to unstable performance when market regimes shifted,  
+and striking a balance between short-horizon reactivity and longer-horizon consistency proved non-trivial.  
+In addition, the need to maintain low-latency forecasting while continuously updating data streams introduced further engineering constraints.   
+
+In practice, we addressed these challenges by:
+\begin{enumerate}
+    \item implementing an adaptive model-selection mechanism that automatically switches between ARIMA, LSTM, Seq2Seq, and Transformer forecasters based on data length and volatility, reducing overfitting to transient market noise;
+    \item applying log-scale normalization and rolling-window retraining to smooth sudden shocks while maintaining sensitivity to trend reversals;
+    \item introducing asynchronous data caching and lightweight API responses in FastAPI to minimize delay between inference and visualization.
+\end{enumerate}
+We perform bounded updates to model states and cached predictions, 
+ensuring that forecast outputs remain consistent and responsive without oscillating under volatile market conditions.
+
+
+
+\section{AI Analyst}
+
+During the development of the AI Analyst subsystem, several technical challenges were encountered.
+\begin{enumerate}
+    \item First, integrating RagFlow’s OpenAI-compatible API with the FastAPI backend required careful handling of asynchronous requests and session lifecycle management, as improper timing often caused session conflicts or context loss.
+    \item Second, ensuring persistent and consistent chat histories across user sessions posed difficulties in MongoDB schema design and index optimization, especially when dealing with large, nested message structures.
+    \item Third, the coordination between document retrieval and generation demanded fine-tuning of the semantic similarity thresholds to balance recall and precision, preventing both information redundancy and retrieval misses.
+    \item Fourth, prompt engineering proved challenging, as the system had to maintain consistent model behavior while allowing limited user customization without exposing internal system prompts.
+\end{enumerate}
+
+% \section{Combined Investment Recommendation Module}
