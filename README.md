@@ -1,0 +1,1 @@
+# IRS-PM-2025-09-10-AIS07FT-GRP6-FinSight-Intelligent_Stock-Prediction_and_Advisory_Platform
