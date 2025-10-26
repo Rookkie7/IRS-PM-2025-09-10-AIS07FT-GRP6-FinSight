@@ -1,0 +1,203 @@
+\chapter{Market Research}
+
+\section{Industry Trends}
+\index{Industry Trends|(}
+
+The global fintech market is growing fast and getting more AI-heavy every quarter. Recent estimates put the market at \textbf{\$394.88B in 2025} (↑ from \$340.10B in 2024) and project \textbf{\$1{,}126.64B by 2032} (CAGR \textbf{16.2\%} over the period). \textit{Translation: sustained double-digit growth and huge room for new, AI-native workflows.} \parencite{fbi_fintech_2025} At the same time, institutions report accelerating adoption of generative \acs{AI} across key banking functions; McKinsey pegs the overall gen-\acs{AI} value creation potential in the \emph{trillions} annually, with clear use-cases in research, service and risk. \parencite{mck_genai_banking,mck_state_ai_2023} Adoption isn’t uniform, though--European financial firms still cite \textbf{compliance and model-risk} concerns as blockers--so solutions that are \textbf{grounded, auditable, and explainable} have a clear edge. \parencite{ft_ai_hurdles_2024}
+
+Meanwhile the research workflow is tilting toward \acf{AI}: vendors are shipping analyst-assist tools and survey data shows rising enterprise spend on AI inference. \parencite{bloomberg_bi_ai_spend_2024,bloomberg_doc_insights_2025}. Investors increasingly demand these AI-driven solutions to filter vast financial data and make informed decisions. Demand-side pressure is obvious: the SEC’s \acs{EDGAR} now \textbf{processes \(\sim\)4{,}700 filings/day} and serves \textbf{\(\sim\)3{,}000~TB/year} to the public—manual “scan and tab” workflows no longer scale. \parencite{sec_about_edgar_2024} On the supply side, major data vendors are shipping tools targeting analyst productivity with \acs{AI}, with Bloomberg’s CTO noting tools that could streamline “up to \textbf{80\%} of an analyst’s workload.” \parencite{fbi_fintech_2025,fnl_bbg_analyst_80_2025}.
+
+In short, Fintech keeps compounding and it’s getting more \textbf{AI-native}. The implication for us: analyst-assist products like FinSight will win attention in a market where analyst time is scarce.
+\index{Industry Trends|)}
+
+\section{Competitive Landscape}
+\index{Competitive Landscape|(}
+
+Existing platforms such as Robinhood, Betterment, and Eastmoney provide trading tools, ETF-based advisory, or information aggregation. However, we have found gaps in their offerings.
+
+\textbf{Robinhood} popularised commission-free trading; it's strong on access and ease on features (options, crypto, 24/5 tokens in EU, a rebuilt newsfeed with premium sources, and more). It keeps evolving its newsfeed, but it isn’t an explainable, evidence-linked analyst. \parencite{reuters_robinhood_tokens_2025,hood_newsfeed_2019,hood_crypto_2024,hood_site} \textbf{Betterment} is the classic robo-advisor: goal-based portfolios built from low-cost \acs{ETF}s, risk-adjusted over horizon, with optional human guidance too. It has solid UX; again, however, not research-grade explainable analytics. \parencite{forbes_betterment_2025,wsj_betterment_2025,betterment_site} \textbf{Eastmoney} (China) is a massive information + brokerage platform combining data, news and execution at scale, but the typical offering emphasizes aggregation/execution over \textbf{user vectors + live sentiment + grounded LLM research}. \parencite{eastmoney_reuters, eastmoney_forbes} \textbf{TradingHub} (MAST) is a specialised trade-surveillance vendor used by tier-1 institutions; its cross-product abuse detection focuses on modelling trader behaviour and market impact to cut false positives. I.e., a pure surveillance benchmark rather than execution or advisory. \parencite{tradinghub_trade_surv_2025,summit_tradinghub_2023}
+
+\textit{Gap we\’re targeting:} these incumbents are great at execution or passive advice, but typically lack \textbf{dynamic user embeddings}, \textbf{live news ingestion with sentiment + similarity}, and \textbf{evidence-backed, explainable \acs{LLM} research} that stitches filings, news and quant signals together for the specific individual. That’s the FinSight wedge. AI-powered explainable personalized recommendations are exactly where we sit.
+\index{Competitive Landscape|)}
+
+\section{User Requirement}
+\index{User Requirement|(}
+
+Retail investors struggle with information overload and lack professional analysis tools. Intermediate investors seek customizable recommendations that reflect their risk tolerance and sector preferences. They really need intelligent trading tools to guide their investment.
+
+Retail and intermediate investors face two real problems: \textbf{information overload} and a shortage of \textbf{professional-grade analysis tools}. The FINRA Foundation’s latest NFCS data highlights persistent capability gaps and rising complexity for retail investors; there is a higher financial stress on households too, which struggle despite steady incomes. These 2024/2025 survey waves underscore the need for clearer guidance and better (which in this world always means data-driven) decision support. \parencite{finra_nfcs_portal,finra_nfcs_2025,finra_nfcs_press_2025} On the flip side, investors \emph{want} \textbf{personalization}: CFA Institute’s Investor Trust Study shows tech acts as a trust multiplier, with investors valuing advice aligned to personal preferences and values. Market participants seek customizable recommendations that reflect their risk tolerance and sector preferences. There clearly a exists strong interest for transparent, actionable, understandable advice augmented by technology. \parencite{cfa_personalization_2024,cfa_trust_2022_pdf} Industry leaders say the trend is the same inside firms: AI is positioned to streamline a large share of the analyst workload, freeing humans for judgment and client work. \parencite{fnl_bbg_analyst_80_2025}
+
+\textbf{Implication for FinSight:} learn the user (risk, sectors, themes), maintain fresh news/ticker/user embeddings, score similarity and sentiment in near real time, and surface \textbf{explainable} recommendations and “what changed” signals with citations. (Design specifics are in Project Scope.)
+\index{User Requirement|)}
+
+
+\section{Project Scope}
+
+\subsection{Data Scope}
+\begin{itemize}
+  \item \textbf{User profile signals}: interactions (reads, clicks, watchlists), risk tolerance, sector/theme tilt $\rightarrow$ a \emph{user embedding} that updates over time.
+  \item \textbf{Market \& fundamentals}: end-of-day prices, corporate actions, and key financial line items mapped to tickers/CIKs.
+  \item \textbf{News \& filings}: live news feeds and regulatory docs (e.g., EDGAR/SGX). Web pages are extracted with Trafilatura; files are parsed with Unstructured before chunking. \parencite{trafilatura_docs,unstructured_partition}
+\end{itemize}
+
+\subsection{Module Scope}
+\begin{itemize}
+  \item \textbf{News browsing \& analysis}: topic tags, entity/ticker linking, finance sentiment (FinBERT), and “what changed” summaries; updates user/news/ticker vectors in near real time. \parencite{finbert_araci2019,finbert_trend_2024}
+  \item \textbf{Stock trend prediction}: short-horizon signals via time-series DL (LSTM/transformers) with an auditable risk lens (volatility/beta).
+  \item \textbf{Portfolio \& pairs research}: pair selection, signal-horizon tuning, and weighting schemes; reproducible backtests and ablations.
+  \item \textbf{AI Financial Research Analyst}: retrieval-augmented answers with citations, peer comps, fundamentals, and pros/cons rationale. \parencite{rag_hallucination}
+\end{itemize}
+
+\subsection{Architecture Scope}
+\begin{itemize}
+  \item \textbf{Retrieval \& vectors}: dense embeddings for \emph{users}, \emph{news}, \emph{tickers}, plus a dedicated \emph{LLM retriever} index. Vector search is the backbone (FAISS today; pgvector when we need persistence/SQL joins). \parencite{faiss_2024,pgvector_github}
+  \item \textbf{Reranking}: first-stage ANN retrieval (cosine/IP), then a cross-encoder reranker (e.g., \emph{bge-reranker-v2-m3}) for higher answer quality. \parencite{bge_reranker_m3}
+  \item \textbf{Model serving}: OpenAI-compatible LLM server (vLLM) behind a thin API; clients call \texttt{/v1/chat/completions} unchanged. \parencite{vllm_docs}
+  \item \textbf{Parsing \& ingestion}: \texttt{partition(auto)} in Unstructured for messy PDFs/Office; Trafilatura for robust main-text extraction. \parencite{unstructured_partition,trafilatura_docs}
+  \item \textbf{Explainability by design}: RAG to ground answers in retrieved evidence (fewer hallucinations), with inline reasoning and citations. \parencite{rag_hallucination}
+\end{itemize}
+
+\subsection{Methods \& Design Decisions}
+\begin{enumerate}[leftmargin=*,itemsep=0.25em]
+  \item \textbf{Ingestion $\rightarrow$ chunks}: fetch $\rightarrow$ extract (Trafilatura / Unstructured) $\rightarrow$ normalize $\rightarrow$ chunk with overlap; store provenance. \parencite{trafilatura_docs,unstructured_partition}
+  \item \textbf{Embeddings}: encode chunks/entities with a strong general embedding model; store vectors + metadata for fast lookup.
+  \item \textbf{Retrieve \& rerank}: ANN search in FAISS/pgvector (cosine/IP) to get $k$ candidates; rerank with a cross-encoder and keep top-$N$. \parencite{faiss_2024,pgvector_github,bge_reranker_m3}
+  \item \textbf{Generation}: prompt the LLM via vLLM’s OpenAI-compatible endpoint; require JSON with \textit{answer}, \textit{reasoning}, \textit{citations}. \parencite{vllm_docs}
+  \item \textbf{Sentiment \& risk lens}: \acf{FinBERT} tags (pos/neu/neg) + simple, auditable risk overlays (vol/beta). \parencite{finbert_araci2019}
+  \item \textbf{Why RAG}: retrieval augmentation curbs hallucination and keeps answers current; retrieval quality is a first-class metric. \parencite{rag_hallucination}
+\end{enumerate}
+
+\subsection{Out of Scope}
+\begin{itemize}
+  \item Real-money execution/broker integration or HFT-level latency.
+  \item Publishing proprietary partner data/models; we report methods and results only.
+\end{itemize}
+
+% \begin{figure}[ht]
+% \begin{minipage}{0.97\linewidth}
+
+% \begin{figure}[t]
+%   \centering
+%   \begin{adjustbox}{width=\textwidth,max height=0.95\textheight}
+%   \begin{tikzpicture}[
+%     node distance=10mm and 14mm,
+%     >={Latex[length=2mm]},
+%     tiny/.style={font=\tiny},
+%     box/.style={rounded corners=2pt,draw,fill=white,align=center,inner sep=3pt,
+%                 minimum width=28mm,minimum height=7mm},
+%     wide/.style={rounded corners=2pt,draw,fill=white,align=center,inner sep=3pt,
+%                  minimum width=56mm,minimum height=8mm},
+%     group/.style={dash pattern=on 2pt off 2pt,rounded corners=3pt,draw=gray!60,inner sep=8pt},
+%     grouplabel/.style={font=\tiny\bfseries,fill=white,inner sep=2pt}
+%   ]
+
+%   % ===== Ingestion =====
+%   \node[box,tiny] (news)    {News/APIs};
+%   \node[box,tiny,right=of news] (filings) {Filings\\(EDGAR/SGX)};
+%   \node[box,tiny,right=of filings] (uploads) {User Docs};
+
+%   % ===== Parse / Embed stack =====
+%   \node[wide,tiny,below=13mm of $(news)!0.5!(uploads)$] (extract)
+%      {Extract / Parse\\ \scriptsize Trafilatura (web) | Unstructured (files)};
+%   \node[wide,tiny,below=of extract] (chunk)
+%      {Chunk \& Normalize\\ \scriptsize overlap + metadata (URL, doc, page)};
+%   \node[wide,tiny,below=of chunk] (embed)
+%      {Embeddings\\ \scriptsize BGE/E5 encoders};
+
+%   \draw[->] (news) -- (extract);
+%   \draw[->] (filings) -- (extract);
+%   \draw[->] (uploads) -- (extract);
+%   \draw[->] (extract) -- (chunk);
+%   \draw[->] (chunk) -- (embed);
+
+%   % ===== Vector Stores (wider spacing) =====
+%   \coordinate (vecbase) at ($(embed) + (0,-20mm)$);
+%   \node[box,tiny] (uvec) at ($(vecbase)+(-48mm,0)$) {User\\Vectors};
+%   \node[box,tiny] (nvec) at ($(vecbase)+(-16mm,0)$) {News\\Vectors};
+%   \node[box,tiny] (svec) at ($(vecbase)+(16mm,0)$)  {Ticker\\Vectors};
+%   \node[box,tiny] (retr) at ($(vecbase)+(48mm,0)$)  {LLM Retriever\\Index};
+
+%   % Embed -> vectors: 4 arrows from embed, through junction, to each vector store
+%   \coordinate (embedjunction) at ($(embed.south) + (0,-5mm)$);
+%   \draw[->,rounded corners=3pt] (embed.south) -- (embedjunction) -| (uvec.north);
+%   \draw[->,rounded corners=3pt] (embed.south) -- (embedjunction) -| (nvec.north);
+%   \draw[->,rounded corners=3pt] (embed.south) -- (embedjunction) -| (svec.north);
+%   \draw[->,rounded corners=3pt] (embed.south) -- (embedjunction) -| (retr.north);
+
+%   % ===== Signals (left side column with more space) =====
+%   \coordinate (sigcol) at ($(uvec) + (-42mm,0)$);
+%   \node[box,tiny] (risk) at ($(sigcol)+(0, 13mm)$) {Risk Lens\\ \scriptsize vol/beta};
+%   \node[box,tiny] (sent) at ($(sigcol)+(0,  0mm)$) {Finance\\Sentiment\\ \scriptsize FinBERT};
+%   \node[box,tiny] (fcst) at ($(sigcol)+(0,-13mm)$) {Forecasting\\ \scriptsize LSTM/Xformers};
+
+%   % Signal connections with curved arrows (fluid routing)
+%   \draw[->,rounded corners=3pt] (uvec.west) to[out=180,in=0] (risk.east);
+%   \draw[->,rounded corners=3pt] (nvec.south west) to[out=220,in=0] (sent.east);
+%   \draw[->,rounded corners=3pt] (svec.south west) to[out=240,in=0] (fcst.east);
+
+%   % ===== Retrieve & Rerank =====
+%   % Define a consolidation point for all vector inputs
+%   \coordinate (consolidation) at ($(vecbase) + (0,-20mm)$);
+  
+%   \node[wide,tiny,below=20mm of $(nvec)!0.5!(svec)$] (ann)
+%     {ANN Retrieval (cosine/IP)\\ \scriptsize FAISS (HPC) | pgvector (Postgres)};
+%   \node[box,tiny,right=16mm of ann] (rerank)
+%     {Cross-Encoder\\Reranker\\ \scriptsize bge-reranker-v2-m3};
+
+%   % All four vector stores converge to single point on ANN box
+%   \draw[->,rounded corners=3pt] (uvec.south) -- ++(0,-8mm) -| (consolidation) -- (ann.north);
+%   \draw[->,rounded corners=3pt] (nvec.south) -- ++(0,-5mm) -| (consolidation);
+%   \draw[->,rounded corners=3pt] (svec.south) -- ++(0,-5mm) -| (consolidation);
+%   \draw[->,rounded corners=3pt] (retr.south) -- ++(0,-8mm) -| (consolidation);
+  
+%   \draw[->] (ann) -- (rerank);
+
+%   % ===== RAG + Serving =====
+%   \node[wide,tiny,below=13mm of $(ann)!0.5!(rerank)$] (rag)
+%     {RAG Layer\\ \scriptsize FastAPI (custom) | RAGFlow (orchestration)};
+%   \draw[->] (rerank.south) -- (rag.north);
+
+%   \node[wide,tiny,below=of rag] (llm)
+%     {LLM Server\\ \scriptsize vLLM (OpenAI-compatible) | Ollama/DeepSeek};
+%   \draw[->] (rag) -- (llm);
+
+%   % ===== Outputs =====
+%   \node[box,tiny,below left=13mm and 8mm of llm] (answers)
+%     {Analyst-style\\Answers\\ \scriptsize reasoning +\\citations};
+%   \node[box,tiny,below right=13mm and 8mm of llm] (feeds)
+%     {News/\\Watchlists\\ \scriptsize "what changed"\\+ tags};
+
+%   % Both output arrows: 2 arrows from llm, through junction, to each output box
+%   \coordinate (llmout) at ($(llm.south) + (0,-5mm)$);
+%   \draw[->,rounded corners=3pt] (llm.south) -- (llmout) -| (answers.north);
+%   \draw[->,rounded corners=3pt] (llm.south) -- (llmout) -| (feeds.north);
+
+%   % ===== GROUPS (behind, with labels on right side) =====
+%   \begin{scope}[on background layer]
+%     \node[group,fit=(news)(filings)(uploads)] (ing) {};
+%     \node[grouplabel,anchor=south,yshift=3mm] at (ing.north) {Ingestion};
+    
+%     \node[group,fit=(extract)(chunk)(embed)] (parse) {};
+%     \node[grouplabel,anchor=west] at (parse.east) {Parsing \& Embedding};
+    
+%     \node[group,fit=(uvec)(nvec)(svec)(retr)] (vec) {};
+%     \node[grouplabel,anchor=west] at (vec.east) {Vector Stores};
+    
+%     \node[group,fit=(risk)(sent)(fcst)] (sig) {};
+%     \node[grouplabel,anchor=south] at (sig.north) {Signals};
+    
+%     \node[group,fit=(ann)(rerank)] (ret) {};
+%     \node[grouplabel,anchor=west] at (ret.east) {Retrieve \& Rerank};
+    
+%     \node[group,fit=(rag)(llm)(answers)(feeds)] (gen) {};
+%     \node[grouplabel,anchor=north east,xshift=-2mm,yshift=-2mm] at (gen.north east) {Generation/Serving};
+%   \end{scope}
+
+%   \end{tikzpicture}
+%   \end{adjustbox}
+%   \caption{FinSight overview: ingest $\rightarrow$ parse $\rightarrow$ embed $\rightarrow$ retrieve \& rerank $\rightarrow$ generate.
+%   Vector search is the backbone (FAISS on HPC; pgvector for persistent Postgres-backed search). Sidecars provide sentiment, risk and
+%   short-horizon forecasts. For RAG, retrieval is reranked, then fed to an LLM server---OpenAI-compatible vLLM or Ollama/DeepSeek
+%   behind RAGFlow---for grounded answers with citations.}
+%   \label{fig:finsight-overview}
+% \end{figure}

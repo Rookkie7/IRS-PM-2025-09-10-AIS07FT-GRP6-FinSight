@@ -1,0 +1,34 @@
+\chapter{Conclusion}
+
+\section{Findings and Discussion}
+This implementation draws directly on concepts from our Intelligent Reasoning Systems course. By combining knowledge representation, reasoning under uncertainty, and data-driven inference, the system goes beyond raw computation to provide structured, explainable, and evidence-backed financial recommendations. The ability to integrate symbolic reasoning (rules, scenarios, constraints) with statistical methods (LLMs, embeddings, sentiment models) demonstrates how intelligent reasoning frameworks can be applied to real-world domains like financial analysis and investment decision-support.
+
+
+\section{Future Work}
+\subsection{News}
+
+\begin{enumerate}
+    \item Broader sources & quality scoring — Add filings / earnings calls / research notes with dedup, entity normalization, and quality scores.
+    \item Event extraction — Structure key events (earnings surprise) for downstream use.
+\end{enumerate}
+
+\subsection{Recommend}
+
+\begin{enumerate}
+    \item Hybrid ranking with finance signals — Fuse content vectors with factor signals (value, quality, momentum), analyst ratings, and sector priors.
+    \item Explainability & risk overlays — Show “why recommended” (similar news, factors, peers) and attach risk notes (volatility, drawdown, earnings dates).
+\end{enumerate}
+
+\subsection{Forecast}
+
+\begin{enumerate}
+    \item Model upgrades — Add TFT/N-BEATS/Informer and consider regime-aware modeling.
+    \item Richer features — Macro, events, flows, sentiment/topics to improve signal quality.
+\end{enumerate}
+
+\subsection{AI Analyst}
+
+\begin{enumerate}
+    \item Grounded answers — Stronger citation/attribution and fallback disclaimers when KB is weak.
+    \item Tool calling — Integrate functions (quotes, fundamentals, backtests) via tool/agent calls.
+\end{enumerate}

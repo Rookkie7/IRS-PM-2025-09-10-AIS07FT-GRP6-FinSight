@@ -1,0 +1,44 @@
+\chapter{Introduction}
+
+
+
+% \cofeBm{1}{1}{0}{4cm}{-3cm} %% coffee mark HA HA!
+
+\section{Background} % why is this a non trivial problem
+
+Markets move fast; the information firehose moves faster. Between filings and financial reports, earnings calls, \acf{ESG} notes, and an endless news stream, not to mention the unpredictable market movements, even pros struggle to separate signal from noise in time to act. Investors are often overwhelmed by massive volumes of digital information. (For scale: \acs{EDGAR} alone processes \(\sim\)4,700 filings per day and serves petabytes annually, so “manual scan + tabs” doesn’t cut it.) 
+
+Traditional investment platforms in India and globally often lack personalized recommendations and dynamic adaptation to investor preferences. We wanted a practical way to solve these issues while staying grounded in practical results. It was clear the industry today needs an AI-powered assistant more than ever before: explainable, and fast. Our goal with FinSight is simple: compress the chaos into what matters now for an individual investor or desk---relevant news, interesting tickers, quick signals/predictions, and a specialised \acs{LLM} that behaves like a personal \acf{FRA} (reads your docs, explains its thinking, shows its work). 
+
+We chose to build this hand-in-hand with industry. Partnering with ArthAlpha (\acs{SEBI}-registered quant shop) kept us focused on the work they actually need: an “AI analyst” that answers fundamentals, compares a stock to its peers with reasons and citations, and a \ac{DL}-centric deep dive into quant tasks like pairs trading, signal horizon tuning and portfolio weighting. They needed a few extra \textbf{pairs} of hands (nice pun, yes), and we needed live constraints and feedback loops. That fit let us start with a clear scope, stay directed, and deliver actionable results instead of just building tech for its own sake. Also, the broader industry is converging here: firms are investing heavily in AI to cut research grunt work and surface insights faster---\textbf{analyst time is scarce}.
+
+Why this collaboration? Because it keeps us honest. It ensured we solve real problems, not just make pretty demos. Not just industry relevance; this also offers us exposure to real-world financial AI applications and mentorship, setting us and this project up for longer-term impact and success.
+
+At a high level, FinSight ingests live news and filings, maintains embeddings for users, news and tickers, and uses retrieval-augmented generation so answers are grounded and auditable. We emphasise explainability (reasoning traces, citations, sensible visuals) because trust beats black-box outputs. Details of the stack and models appear in the Methods/Architecture section. Overall, this is an intelligent stock research and recommendation system that integrates financial fundamentals, user profiles, news sentiment, and predictive analytics.
+
+
+
+\section{Aims} 
+Design and implement a web-based stock research and insight platform that learns each user’s preferences and delivers \textbf{actionable}, \textbf{grounded} outputs: tailored news, “interesting” tickers, short-horizon predictions, and a specialised \acf{LLM} that behaves like a personal \acf{FRA}. The system combines financial fundamentals with \acf{RAG}, deep time-series modelling, \acf{NLP}, and vector-based similarity matching to keep answers current, explainable, and fast.
+
+
+\section{Objectives} 
+\begin{enumerate}[label=(\alph*)]
+  \item \textbf{User profile vector}: Build a multi-dimensional user profile embedding that reflects the investor's sector preference/style tilt, risk tolerance, investment horizon, and thematic interests; keep it up-to-date from interactions.
+  \item \textbf{Unified data layer}: Ingest real-time market data, news, and regulatory filings into one interface with clean metadata and key highlights (source, sentiment, sector, time, ticker mapping).
+  \item \textbf{News analysis}: Implement news browsing and analysis tab with topic tags and sentiment; write back signals to the user vector and maintain embeddings for \textbf{users}, \textbf{news items}, and \textbf{tickers} for similarity matching.
+  \item \textbf{Predictions}: Build a stock trend module using time-series ML (\acs{LSTM}/transformer/seq2seq amongst others in recurrent family) to surface short-horizon movement and “what changed” highlights.
+  \item \textbf{AI Financial Research Analyst (ArthAlpha focus)}:
+  \begin{itemize}
+    \item Parse company reports and market data (tabular + text) and index them for retrieval.
+    \item Generate structured research outputs (ratios, valuations, peer comps) with evidence.
+    \item Provide \textbf{recommendations and risk assessments} backed by citations.
+    \item Combine quantitative factors with qualitative reasoning; show steps.
+  \end{itemize}
+  \item \textbf{RAG + retrieval quality}: Maintain a retrieval index for the \acf{LLM}; use similarity search + reranking to supply grounded context before answering.
+  % \item \textbf{Pairs/quant track (PRS Project module)}: Stand up a research track for pairs trading (signal design, horizon optimisation, portfolio weights; exploratory \textit{RL} where feasible) with reproducible backtests.
+  \item \textbf{Serving and UX}: Deliver a responsive front-end and a scalable back-end (\acf{HPC} cluster-friendly), exposing an API that external apps can call securely.
+  \item \textbf{Project Management}: Make use of agile principles to effectively keep track of tasks and team members' progress. Also ensure everyone is in sync on the ongoing work.
+  \item \textbf{Evaluation \& trust}: Measure retrieval precision, grounding/citation rate, sentiment accuracy, forecast error, and end-to-end latency; emphasise \textbf{explainability} in outputs.
+  \item \textbf{Ops}: Ship well-structured repositories, documentation, automated data prep, and deployment scripts; keep secrets safe and logs useful without leaking \textsc{pii}.
+\end{enumerate}
