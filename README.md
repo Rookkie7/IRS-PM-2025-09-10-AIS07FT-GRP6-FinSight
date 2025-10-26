@@ -31,9 +31,11 @@ Operationally, we engineered the stack to be practical: automated ingestion and 
 ---
 
 ## SECTION 4 : VIDEO OF SYSTEM MODELLING & USE CASE DEMO
-
+![Overview of Promotion Video](images/Promotion.png)
 [2025 FALL NUS ISS AIS07 IRS5001 GRP6 FinSight Promotion Video](https://www.youtube.com/watch?v=bolGMzWV9H4)
 
+
+![Overview of System Design](images/System.png)
 [2025 FALL NUS ISS AIS07 IRS5001 GRP6 FinSight System Demonstration](https://www.youtube.com/watch?v=etfMw8lXQlI)
 
 
